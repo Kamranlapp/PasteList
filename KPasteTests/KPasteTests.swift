@@ -18,6 +18,115 @@ final class KPasteTests: XCTestCase {
         XCTAssertNotEqual(hotKey.modifiers & UInt32(shiftKey), 0)
     }
 
+    @MainActor
+    func testCursorPanelPlacesPointerOverFirstRowAwayFromScreenEdges() {
+        let pointer = NSPoint(x: 800, y: 600)
+        let expectedHorizontalPosition = StatusItemController.cursorScrollBarWidth
+            + StatusItemController.cursorScrollBarSpacing
+            + StatusItemController.cursorPanelPadding
+            + StatusItemController.popoverSize.width
+                * StatusItemController.cursorHorizontalAnchor
+        let expectedVerticalPosition = StatusItemController.cursorWindowControlDiameter
+            + StatusItemController.cursorWindowControlSpacing
+            + StatusItemController.cursorPanelPadding
+            + StatusItemController.cursorFirstRowCenterFromTop
+        let frame = StatusItemController.cursorPanelFrame(
+            pointerLocation: pointer,
+            visibleFrame: NSRect(x: 0, y: 0, width: 1_440, height: 900)
+        )
+
+        XCTAssertEqual(
+            pointer.x - frame.minX,
+            expectedHorizontalPosition
+        )
+        XCTAssertEqual(
+            frame.maxY - pointer.y,
+            expectedVerticalPosition
+        )
+    }
+
+    @MainActor
+    func testCursorPanelStaysInsideVisibleScreenNearEdges() {
+        let visibleFrame = NSRect(x: 0, y: 25, width: 1_000, height: 700)
+        let frame = StatusItemController.cursorPanelFrame(
+            pointerLocation: NSPoint(x: 995, y: 30),
+            visibleFrame: visibleFrame
+        )
+
+        XCTAssertGreaterThanOrEqual(frame.minX, visibleFrame.minX)
+        XCTAssertGreaterThanOrEqual(frame.minY, visibleFrame.minY)
+        XCTAssertLessThanOrEqual(frame.maxX, visibleFrame.maxX)
+        XCTAssertLessThanOrEqual(frame.maxY, visibleFrame.maxY)
+    }
+
+    @MainActor
+    func testCursorPanelSizeIsSavedAndRestored() throws {
+        let suiteName = "KPasteTests.cursorPanelSize.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let savedSize = NSSize(width: 460, height: 520)
+        StatusItemController.saveCursorPanelSize(savedSize, in: defaults)
+
+        XCTAssertEqual(
+            StatusItemController.storedCursorPanelSize(in: defaults),
+            savedSize
+        )
+    }
+
+    func testClipTimestampUsesTodayYesterdayAndWeekdayFormats() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let now = try XCTUnwrap(
+            calendar.date(from: DateComponents(
+                year: 2026,
+                month: 7,
+                day: 29,
+                hour: 18
+            ))
+        )
+        let today = try XCTUnwrap(
+            calendar.date(from: DateComponents(
+                year: 2026,
+                month: 7,
+                day: 29,
+                hour: 15,
+                minute: 4
+            ))
+        )
+        let yesterday = try XCTUnwrap(
+            calendar.date(from: DateComponents(
+                year: 2026,
+                month: 7,
+                day: 28,
+                hour: 9,
+                minute: 15
+            ))
+        )
+        let monday = try XCTUnwrap(
+            calendar.date(from: DateComponents(
+                year: 2026,
+                month: 7,
+                day: 27,
+                hour: 20,
+                minute: 30
+            ))
+        )
+
+        XCTAssertEqual(
+            ClipTimestampFormatter.string(for: today, relativeTo: now, calendar: calendar),
+            "Today 15:04"
+        )
+        XCTAssertEqual(
+            ClipTimestampFormatter.string(for: yesterday, relativeTo: now, calendar: calendar),
+            "Yesterday 09:15"
+        )
+        XCTAssertEqual(
+            ClipTimestampFormatter.string(for: monday, relativeTo: now, calendar: calendar),
+            "Monday 20:30"
+        )
+    }
+
     func testAppPathsCreateExpectedDirectories() throws {
         try withTemporaryPaths { paths in
             XCTAssertEqual(paths.applicationSupportDirectory.lastPathComponent, "com.kam.kpaste")

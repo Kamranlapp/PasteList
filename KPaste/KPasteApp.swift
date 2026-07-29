@@ -72,7 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
             self.statusItemController = statusItemController
             globalHotKeyController = GlobalHotKeyController { [weak statusItemController] in
-                statusItemController?.showPopover()
+                statusItemController?.toggleCursorPanelAtPointer()
             }
             services.globalHotKeyController = globalHotKeyController
             retentionScheduler.start()

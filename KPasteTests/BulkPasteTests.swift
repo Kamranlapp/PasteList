@@ -61,6 +61,19 @@ final class BulkPasteTests: XCTestCase {
         XCTAssertEqual(BulkSeparatorOption.custom.value(customValue: " <> "), " <> ")
     }
 
+    func testBulkPasteCardFormatsProduceExpectedText() {
+        let values = ["First", "Second", "Third"]
+
+        XCTAssertEqual(BulkPasteFormat.newline.combine(values), "First\nSecond\nThird")
+        XCTAssertEqual(
+            BulkPasteFormat.bullets.combine(values),
+            "• First\n• Second\n• Third"
+        )
+        XCTAssertEqual(BulkPasteFormat.commaSpace.combine(values), "First, Second, Third")
+        XCTAssertEqual(BulkPasteFormat.periodSpace.combine(values), "First. Second. Third")
+        XCTAssertEqual(BulkPasteFormat.slash.combine(values), "First / Second / Third")
+    }
+
     func testBulkDataSourceRejectsNonTextClips() async throws {
         let harness = try makeHarness()
         defer { harness.cleanUp() }

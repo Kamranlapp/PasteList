@@ -25,7 +25,7 @@ final class BlobStorageTests: XCTestCase {
     }
 
     func testImageIsNormalizedToPNG() throws {
-        try withStorage { storage, _, _ in
+        try withStorage { storage, paths, _ in
             let image = NSImage(size: NSSize(width: 4, height: 3), flipped: false) { rect in
                 NSColor.systemRed.setFill()
                 rect.fill()
@@ -43,6 +43,20 @@ final class BlobStorageTests: XCTestCase {
             let decoded = try XCTUnwrap(NSBitmapImageRep(data: pngData))
             XCTAssertEqual(decoded.pixelsWide, 4)
             XCTAssertEqual(decoded.pixelsHigh, 3)
+
+            let dragURLs = try storage.dragURLs(
+                for: ClipRecord(
+                    id: 7,
+                    type: ClipContentType.image.rawValue,
+                    content: relativePath,
+                    previewText: "4 × 3",
+                    createdAt: Date()
+                )
+            )
+            XCTAssertEqual(
+                dragURLs,
+                [paths.blobsDirectory.appendingPathComponent(relativePath)]
+            )
         }
     }
 
@@ -78,6 +92,17 @@ final class BlobStorageTests: XCTestCase {
                 try Data(contentsOf: copiedURLs[1].appendingPathComponent("nested.txt")),
                 Data("nested".utf8)
             )
+
+            let dragURLs = try storage.dragURLs(
+                for: ClipRecord(
+                    id: 12,
+                    type: ClipContentType.file.rawValue,
+                    content: manifest,
+                    previewText: "alpha.txt, Folder",
+                    createdAt: Date()
+                )
+            )
+            XCTAssertEqual(dragURLs, copiedURLs)
 
             try Data("changed".utf8).write(to: textFile)
             XCTAssertEqual(try Data(contentsOf: copiedURLs[0]), Data("original".utf8))

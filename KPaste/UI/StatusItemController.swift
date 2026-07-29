@@ -3,13 +3,40 @@ import SwiftUI
 
 @MainActor
 final class StatusItemController: NSObject {
-    static let popoverSize = NSSize(width: 420, height: 560)
+    static let popoverSize = NSSize(width: 294, height: 392)
+    static let cursorPanelPadding: CGFloat = 12
+    static let cursorPanelContentSize = popoverSize
+    static let cursorPanelSurfaceSize = NSSize(
+        width: cursorPanelContentSize.width + cursorPanelPadding * 2,
+        height: cursorPanelContentSize.height + cursorPanelPadding * 2
+    )
+    static let cursorScrollBarWidth: CGFloat = 8
+    static let cursorScrollBarSpacing: CGFloat = 8
+    static let cursorWindowControlDiameter: CGFloat = 24
+    static let cursorWindowControlSpacing: CGFloat = 8
+    static let cursorPanelSize = NSSize(
+        width: cursorScrollBarWidth
+            + cursorScrollBarSpacing
+            + cursorPanelSurfaceSize.width,
+        height: cursorWindowControlDiameter
+            + cursorWindowControlSpacing
+            + cursorPanelSurfaceSize.height
+    )
+    static let cursorPanelMinimumSize = NSSize(width: 276, height: 332)
+    static let cursorHorizontalAnchor = 0.75
+    static let cursorFirstRowCenterFromTop: CGFloat = 56
+    private static let screenEdgePadding: CGFloat = 8
+    private static let cursorPanelWidthDefaultsKey = "cursorPanelWidth"
+    private static let cursorPanelHeightDefaultsKey = "cursorPanelHeight"
 
     private let statusItem: NSStatusItem
     private let popover: NSPopover
     private let actionsPopover: NSPopover
+    private let cursorPanel: CursorHistoryPanel
+    private let selectionResetController: HistorySelectionResetController
     private let accessibilityController: AccessibilityController
     private let onOpenSettings: () -> Void
+    private var isCursorPanelPinned = false
 
     init(
         repository: ClipRepository,
@@ -21,12 +48,25 @@ final class StatusItemController: NSObject {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         popover = NSPopover()
         actionsPopover = NSPopover()
+        selectionResetController = HistorySelectionResetController()
+        let initialCursorPanelSize = Self.storedCursorPanelSize()
+        cursorPanel = CursorHistoryPanel(
+            contentRect: NSRect(origin: .zero, size: initialCursorPanelSize),
+            styleMask: [.borderless, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
         self.accessibilityController = accessibilityController
         self.onOpenSettings = onOpenSettings
         super.init()
 
         configureStatusItem()
         configurePopover(
+            repository: repository,
+            blobStorage: blobStorage,
+            pasteboardMonitor: pasteboardMonitor
+        )
+        configureCursorPanel(
             repository: repository,
             blobStorage: blobStorage,
             pasteboardMonitor: pasteboardMonitor
@@ -86,6 +126,7 @@ final class StatusItemController: NSObject {
     ) {
         popover.behavior = .transient
         popover.animates = true
+        popover.delegate = self
         popover.contentSize = Self.popoverSize
         popover.contentViewController = NSHostingController(
             rootView: HistoryView(
@@ -103,7 +144,52 @@ final class StatusItemController: NSObject {
                 ),
                 onRestored: { [weak self] in
                     self?.didRestoreClip()
-                }
+                },
+                selectionResetController: selectionResetController
+            )
+        )
+    }
+
+    private func configureCursorPanel(
+        repository: ClipRepository,
+        blobStorage: BlobStorage,
+        pasteboardMonitor: PasteboardMonitor
+    ) {
+        cursorPanel.isReleasedWhenClosed = false
+        cursorPanel.isFloatingPanel = true
+        cursorPanel.level = .popUpMenu
+        cursorPanel.backgroundColor = .clear
+        cursorPanel.isOpaque = false
+        cursorPanel.hasShadow = true
+        cursorPanel.minSize = Self.cursorPanelMinimumSize
+        cursorPanel.collectionBehavior = [
+            .transient,
+            .moveToActiveSpace,
+            .fullScreenAuxiliary,
+        ]
+        cursorPanel.delegate = self
+        cursorPanel.contentViewController = NSHostingController(
+            rootView: HistoryView(
+                repository: repository,
+                blobStorage: blobStorage,
+                restorer: ClipRestorer(
+                    repository: repository,
+                    blobStorage: blobStorage,
+                    monitor: pasteboardMonitor
+                ),
+                bulkPasteController: BulkPasteController(
+                    repository: repository,
+                    blobStorage: blobStorage,
+                    monitor: pasteboardMonitor
+                ),
+                onRestored: { [weak self] in
+                    self?.didRestoreClip()
+                },
+                usesTransparentBackground: true,
+                onCursorPanelPinChanged: { [weak self] isPinned in
+                    self?.setCursorPanelPinned(isPinned)
+                },
+                selectionResetController: selectionResetController
             )
         )
     }
@@ -114,9 +200,108 @@ final class StatusItemController: NSObject {
         }
 
         actionsPopover.performClose(nil)
+        closeCursorPanel(force: true)
+        selectionResetController.reset()
         accessibilityController.rememberFrontmostApplication()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
+    }
+
+    func toggleCursorPanelAtPointer() {
+        if cursorPanel.isVisible {
+            closeCursorPanel(force: true)
+            return
+        }
+
+        popover.performClose(nil)
+        actionsPopover.performClose(nil)
+        selectionResetController.reset()
+        accessibilityController.rememberFrontmostApplication()
+
+        let pointerLocation = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { $0.frame.contains(pointerLocation) }
+            ?? NSScreen.main
+        guard let visibleFrame = screen?.visibleFrame else {
+            return
+        }
+
+        cursorPanel.setFrame(
+            Self.cursorPanelFrame(
+                pointerLocation: pointerLocation,
+                visibleFrame: visibleFrame,
+                size: cursorPanel.frame.size
+            ),
+            display: true
+        )
+        NSApp.activate(ignoringOtherApps: true)
+        cursorPanel.makeKeyAndOrderFront(nil)
+    }
+
+    static func cursorPanelFrame(
+        pointerLocation: NSPoint,
+        visibleFrame: NSRect,
+        size requestedSize: NSSize = cursorPanelSize
+    ) -> NSRect {
+        let availableFrame = visibleFrame.insetBy(
+            dx: screenEdgePadding,
+            dy: screenEdgePadding
+        )
+        let size = NSSize(
+            width: min(max(requestedSize.width, cursorPanelMinimumSize.width), availableFrame.width),
+            height: min(max(requestedSize.height, cursorPanelMinimumSize.height), availableFrame.height)
+        )
+        let desiredOrigin = NSPoint(
+            x: pointerLocation.x
+                - cursorScrollBarWidth
+                - cursorScrollBarSpacing
+                - cursorPanelPadding
+                - (size.width
+                    - cursorScrollBarWidth
+                    - cursorScrollBarSpacing
+                    - cursorPanelPadding * 2)
+                    * cursorHorizontalAnchor,
+            y: pointerLocation.y
+                - (
+                    size.height
+                        - cursorWindowControlDiameter
+                        - cursorWindowControlSpacing
+                        - cursorPanelPadding
+                        - cursorFirstRowCenterFromTop
+                )
+        )
+        let maximumX = max(availableFrame.minX, availableFrame.maxX - size.width)
+        let maximumY = max(availableFrame.minY, availableFrame.maxY - size.height)
+        let origin = NSPoint(
+            x: min(max(desiredOrigin.x, availableFrame.minX), maximumX),
+            y: min(max(desiredOrigin.y, availableFrame.minY), maximumY)
+        )
+        return NSRect(origin: origin, size: size)
+    }
+
+    static func storedCursorPanelSize(
+        in userDefaults: UserDefaults = .standard
+    ) -> NSSize {
+        let width = userDefaults.double(forKey: cursorPanelWidthDefaultsKey)
+        let height = userDefaults.double(forKey: cursorPanelHeightDefaultsKey)
+        guard width.isFinite, height.isFinite, width > 0, height > 0 else {
+            return cursorPanelSize
+        }
+        return NSSize(
+            width: max(CGFloat(width), cursorPanelMinimumSize.width),
+            height: max(CGFloat(height), cursorPanelMinimumSize.height)
+        )
+    }
+
+    static func saveCursorPanelSize(
+        _ size: NSSize,
+        in userDefaults: UserDefaults = .standard
+    ) {
+        userDefaults.set(size.width, forKey: cursorPanelWidthDefaultsKey)
+        userDefaults.set(size.height, forKey: cursorPanelHeightDefaultsKey)
+    }
+
+    private func saveCursorPanelSize() {
+        Self.saveCursorPanelSize(cursorPanel.frame.size)
     }
 
     @objc private func statusItemClicked() {
@@ -129,6 +314,7 @@ final class StatusItemController: NSObject {
 
     private func didRestoreClip() {
         popover.performClose(nil)
+        closeCursorPanel(force: true)
         Task { [weak accessibilityController] in
             _ = await accessibilityController?.pasteIntoPreviousApplication()
         }
@@ -141,6 +327,7 @@ final class StatusItemController: NSObject {
         }
 
         popover.performClose(nil)
+        closeCursorPanel(force: true)
         guard let button = statusItem.button else {
             return
         }
@@ -160,6 +347,64 @@ final class StatusItemController: NSObject {
             NSLog("KPaste failed to restart: %@", String(describing: error))
         }
     }
+
+    private func setCursorPanelPinned(_ isPinned: Bool) {
+        isCursorPanelPinned = isPinned
+        cursorPanel.level = isPinned ? .floating : .popUpMenu
+        cursorPanel.collectionBehavior = isPinned
+            ? [.canJoinAllSpaces, .fullScreenAuxiliary]
+            : [.transient, .moveToActiveSpace, .fullScreenAuxiliary]
+    }
+
+    private func closeCursorPanel(force: Bool = false) {
+        guard force || !isCursorPanelPinned else {
+            return
+        }
+        guard cursorPanel.isVisible else {
+            return
+        }
+        cursorPanel.orderOut(nil)
+        selectionResetController.reset()
+    }
+}
+
+extension StatusItemController: NSWindowDelegate {
+    func windowDidResize(_ notification: Notification) {
+        guard notification.object as? NSWindow === cursorPanel else {
+            return
+        }
+        saveCursorPanelSize()
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        guard notification.object as? NSWindow === cursorPanel else {
+            return
+        }
+        closeCursorPanel()
+    }
+}
+
+extension StatusItemController: NSPopoverDelegate {
+    func popoverDidClose(_ notification: Notification) {
+        guard notification.object as? NSPopover === popover else {
+            return
+        }
+        selectionResetController.reset()
+    }
+}
+
+@MainActor
+final class HistorySelectionResetController: ObservableObject {
+    @Published private(set) var token = 0
+
+    func reset() {
+        token &+= 1
+    }
+}
+
+private final class CursorHistoryPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
 }
 
 private struct StatusActionsView: View {

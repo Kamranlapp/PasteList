@@ -41,6 +41,51 @@ enum BulkSeparatorOption: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+enum BulkPasteFormat: String, CaseIterable, Identifiable, Sendable {
+    case newline
+    case bullets
+    case commaSpace
+    case periodSpace
+    case slash
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .newline: "New line"
+        case .bullets: "Bullets"
+        case .commaSpace: ",  Comma"
+        case .periodSpace: ".  Period"
+        case .slash: "/  Slash"
+        }
+    }
+
+    var preview: String {
+        switch self {
+        case .newline: "↵"
+        case .bullets: "•"
+        case .commaSpace: ", "
+        case .periodSpace: ". "
+        case .slash: " / "
+        }
+    }
+
+    func combine(_ values: [String]) -> String {
+        switch self {
+        case .newline:
+            values.joined(separator: "\n")
+        case .bullets:
+            values.map { "• \($0)" }.joined(separator: "\n")
+        case .commaSpace:
+            values.joined(separator: ", ")
+        case .periodSpace:
+            values.joined(separator: ". ")
+        case .slash:
+            values.joined(separator: " / ")
+        }
+    }
+}
+
 actor BulkPasteDataSource {
     enum BulkPasteError: LocalizedError {
         case emptySelection
@@ -75,6 +120,13 @@ actor BulkPasteDataSource {
             throw BulkPasteError.emptySelection
         }
         return try clips.map(plainText).joined(separator: separator)
+    }
+
+    func combinedText(for clips: [ClipRecord], format: BulkPasteFormat) throws -> String {
+        guard !clips.isEmpty else {
+            throw BulkPasteError.emptySelection
+        }
+        return try format.combine(clips.map(plainText))
     }
 
     func markUsed(_ clips: [ClipRecord]) throws {
@@ -136,12 +188,25 @@ final class BulkPasteController {
             for: clips,
             separator: separator
         )
+        try writeToPasteboard(combinedText)
+        try await dataSource.markUsed(clips)
+    }
+
+    func paste(_ clips: [ClipRecord], format: BulkPasteFormat) async throws {
+        let combinedText = try await dataSource.combinedText(
+            for: clips,
+            format: format
+        )
+        try writeToPasteboard(combinedText)
+        try await dataSource.markUsed(clips)
+    }
+
+    private func writeToPasteboard(_ combinedText: String) throws {
         try monitor.performSelfWrite { pasteboard in
             pasteboard.declareTypes([.string], owner: nil)
             guard pasteboard.setString(combinedText, forType: .string) else {
                 throw BulkPasteError.pasteboardWriteFailed
             }
         }
-        try await dataSource.markUsed(clips)
     }
 }

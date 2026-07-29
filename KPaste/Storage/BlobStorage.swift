@@ -144,6 +144,21 @@ final class BlobStorage: @unchecked Sendable {
         }
     }
 
+    func dragURLs(for clip: ClipRecord) throws -> [URL] {
+        switch ClipContentType(rawValue: clip.type) {
+        case .image:
+            let url = try url(forRelativePath: clip.content)
+            guard fileManager.fileExists(atPath: url.path) else {
+                throw StorageError.missingBlob(url)
+            }
+            return [url]
+        case .file:
+            return try fileURLs(from: clip.content)
+        case .text, .rtf, .url, nil:
+            return []
+        }
+    }
+
     func readData(atRelativePath relativePath: String) throws -> Data {
         let url = try url(forRelativePath: relativePath)
         guard fileManager.fileExists(atPath: url.path) else {

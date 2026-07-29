@@ -114,6 +114,16 @@ final class HistoryViewModel: ObservableObject {
         }
     }
 
+    func replaceSelection(with clips: [ClipRecord]) {
+        let selectableClips = clips.filter(canBulkSelect)
+        selectedClipIDs = selectableClips.compactMap(\.id)
+        selectedClips = Dictionary(
+            uniqueKeysWithValues: selectableClips.compactMap { clip in
+                clip.id.map { ($0, clip) }
+            }
+        )
+    }
+
     func clearSelection() {
         selectedClipIDs.removeAll()
         selectedClips.removeAll()
@@ -125,6 +135,32 @@ final class HistoryViewModel: ObservableObject {
         Task {
             do {
                 try await bulkPasteController.paste(clips, separator: separator)
+                clearSelection()
+                onRestored()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func pasteSelectionAsIs() {
+        let clips = selectedClipIDs.compactMap { selectedClips[$0] }
+        Task {
+            do {
+                try await bulkPasteController.paste(clips, separator: "")
+                clearSelection()
+                onRestored()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func pasteSelection(format: BulkPasteFormat) {
+        let clips = selectedClipIDs.compactMap { selectedClips[$0] }
+        Task {
+            do {
+                try await bulkPasteController.paste(clips, format: format)
                 clearSelection()
                 onRestored()
             } catch {
