@@ -71,7 +71,14 @@ final class ClipRestorerTests: XCTestCase {
             try storage.saveRTF(rtfData, for: id)
         }
         try await restorer.restore(rtf)
-        XCTAssertEqual(pasteboard.data(forType: .rtf), rtfData)
+        let restoredRTF = try XCTUnwrap(pasteboard.data(forType: .rtf))
+        let restoredRichText = try NSAttributedString(
+            data: restoredRTF,
+            options: [.documentType: NSAttributedString.DocumentType.rtf],
+            documentAttributes: nil
+        )
+        XCTAssertEqual(restoredRichText.string, "Restored")
+        XCTAssertEqual(pasteboard.string(forType: .string), "Restored")
 
         let image = NSImage(size: NSSize(width: 8, height: 6), flipped: false) { rect in
             NSColor.systemBlue.setFill()

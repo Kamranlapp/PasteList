@@ -1,6 +1,7 @@
 import Foundation
 import Carbon
 import GRDB
+import ServiceManagement
 import XCTest
 @testable import KPaste
 
@@ -8,6 +9,24 @@ final class KPasteTests: XCTestCase {
     func testApplicationConfiguration() {
         XCTAssertEqual(AppConfiguration.name, "KPaste")
         XCTAssertEqual(AppConfiguration.bundleIdentifier, "com.kam.kpaste")
+    }
+
+    func testClipPrimaryInteractionsKeepSelectionAndDraggingExclusive() {
+        let makeClip: (ClipContentType) -> ClipRecord = { type in
+            ClipRecord(
+                id: 1,
+                type: type.rawValue,
+                content: "content",
+                previewText: "preview",
+                createdAt: Date()
+            )
+        }
+
+        XCTAssertEqual(makeClip(.text).primaryInteraction, .textSelection)
+        XCTAssertEqual(makeClip(.rtf).primaryInteraction, .textSelection)
+        XCTAssertEqual(makeClip(.url).primaryInteraction, .textSelection)
+        XCTAssertEqual(makeClip(.image).primaryInteraction, .fileDrag)
+        XCTAssertEqual(makeClip(.file).primaryInteraction, .fileDrag)
     }
 
     func testDefaultGlobalHotKeyIsCommandShiftV() {
@@ -26,7 +45,7 @@ final class KPasteTests: XCTestCase {
             + StatusItemController.cursorPanelPadding
             + StatusItemController.popoverSize.width
                 * StatusItemController.cursorHorizontalAnchor
-        let expectedVerticalPosition = StatusItemController.cursorWindowControlDiameter
+        let expectedVerticalPosition = StatusItemController.cursorWindowControlAreaHeight
             + StatusItemController.cursorWindowControlSpacing
             + StatusItemController.cursorPanelPadding
             + StatusItemController.cursorFirstRowCenterFromTop
@@ -72,6 +91,44 @@ final class KPasteTests: XCTestCase {
             StatusItemController.storedCursorPanelSize(in: defaults),
             savedSize
         )
+    }
+
+    func testCursorPanelResizeKeepsOppositeCornerFixed() {
+        let initialFrame = NSRect(x: 100, y: 100, width: 500, height: 400)
+
+        let resizedFrame = CursorPanelResizer.frame(
+            from: initialFrame,
+            dragging: [.top, .left],
+            by: NSPoint(x: 50, y: -100),
+            minimumSize: NSSize(width: 300, height: 250),
+            within: nil
+        )
+
+        XCTAssertEqual(
+            resizedFrame,
+            NSRect(x: 150, y: 100, width: 450, height: 300)
+        )
+        XCTAssertEqual(resizedFrame.maxX, initialFrame.maxX)
+        XCTAssertEqual(resizedFrame.minY, initialFrame.minY)
+    }
+
+    func testCursorPanelResizeHonorsMinimumSize() {
+        let initialFrame = NSRect(x: 100, y: 100, width: 500, height: 400)
+
+        let resizedFrame = CursorPanelResizer.frame(
+            from: initialFrame,
+            dragging: [.bottom, .right],
+            by: NSPoint(x: -300, y: 250),
+            minimumSize: NSSize(width: 300, height: 250),
+            within: nil
+        )
+
+        XCTAssertEqual(
+            resizedFrame,
+            NSRect(x: 100, y: 250, width: 300, height: 250)
+        )
+        XCTAssertEqual(resizedFrame.maxX, 400)
+        XCTAssertEqual(resizedFrame.maxY, initialFrame.maxY)
     }
 
     func testClipTimestampUsesTodayYesterdayAndWeekdayFormats() throws {
@@ -227,5 +284,68 @@ final class KPasteTests: XCTestCase {
 
         let paths = try AppPaths(applicationSupportRoot: temporaryRoot)
         return try body(paths)
+    }
+}
+
+@MainActor
+final class LaunchAtLoginControllerTests: XCTestCase {
+    func testInitialSetupDoesNotRegisterWithoutUserAction() throws {
+        let defaults = try isolatedUserDefaults()
+        let service = LaunchAtLoginServiceSpy(status: .notRegistered)
+        let controller = LaunchAtLoginController(
+            service: service,
+            userDefaults: defaults
+        )
+
+        controller.performInitialSetupIfNeeded()
+
+        XCTAssertEqual(service.registerCallCount, 0)
+        XCTAssertFalse(controller.isEnabled)
+    }
+
+    func testToggleIsTheOnlyOperationThatChangesRegistration() throws {
+        let defaults = try isolatedUserDefaults()
+        let service = LaunchAtLoginServiceSpy(status: .notRegistered)
+        let controller = LaunchAtLoginController(
+            service: service,
+            userDefaults: defaults
+        )
+
+        controller.setEnabled(true)
+        controller.setEnabled(false)
+
+        XCTAssertEqual(service.registerCallCount, 1)
+        XCTAssertEqual(service.unregisterCallCount, 1)
+    }
+
+    private func isolatedUserDefaults() throws -> UserDefaults {
+        let suiteName = "LaunchAtLoginControllerTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        addTeardownBlock {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+        return defaults
+    }
+}
+
+@MainActor
+private final class LaunchAtLoginServiceSpy: LaunchAtLoginServicing {
+    var status: SMAppService.Status
+    private(set) var registerCallCount = 0
+    private(set) var unregisterCallCount = 0
+
+    init(status: SMAppService.Status) {
+        self.status = status
+    }
+
+    func register() throws {
+        registerCallCount += 1
+        status = .enabled
+    }
+
+    func unregister() throws {
+        unregisterCallCount += 1
+        status = .notRegistered
     }
 }

@@ -4,6 +4,33 @@ import XCTest
 @testable import KPaste
 
 final class BlobStorageTests: XCTestCase {
+    func testFilesAreStagedBeforeTheyAreCommittedToAClipID() throws {
+        try withStorage { storage, paths, temporaryRoot in
+            let source = temporaryRoot.appendingPathComponent("staged.txt")
+            try Data("staged".utf8).write(to: source)
+
+            let staged = try storage.stageFiles(at: [source])
+            defer { storage.discard(staged) }
+
+            XCTAssertFalse(
+                FileManager.default.fileExists(
+                    atPath: paths.blobsDirectory.appendingPathComponent("77").path
+                )
+            )
+            XCTAssertTrue(
+                try FileManager.default.contentsOfDirectory(atPath: paths.blobsDirectory.path)
+                    .contains { $0.hasPrefix(".staging-") }
+            )
+
+            let manifest = try storage.commit(staged, for: 77)
+
+            XCTAssertEqual(
+                try storage.fileURLs(from: manifest).map(\.lastPathComponent),
+                ["staged.txt"]
+            )
+        }
+    }
+
     func testRTFRoundTripUsesRelativePathAndDeletesCleanly() throws {
         try withStorage { storage, paths, _ in
             let rtf = Data("{\\rtf1 Hello}".utf8)

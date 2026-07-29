@@ -52,11 +52,11 @@ enum BulkPasteFormat: String, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .newline: "New line"
+        case .newline: "New Line"
         case .bullets: "Bullets"
-        case .commaSpace: ",  Comma"
-        case .periodSpace: ".  Period"
-        case .slash: "/  Slash"
+        case .commaSpace: "Separated by ,"
+        case .periodSpace: "Separated by ."
+        case .slash: "Separated by /"
         }
     }
 

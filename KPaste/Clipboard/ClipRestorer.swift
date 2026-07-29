@@ -108,8 +108,15 @@ final class ClipRestorer {
             succeeded = wroteURL && wroteString
 
         case .rtf(let data):
-            pasteboard.declareTypes([.rtf], owner: nil)
-            succeeded = pasteboard.setData(data, forType: .rtf)
+            pasteboard.declareTypes([.rtf, .string], owner: nil)
+            let wroteRTF = pasteboard.setData(data, forType: .rtf)
+            let plainText = try NSAttributedString(
+                data: data,
+                options: [.documentType: NSAttributedString.DocumentType.rtf],
+                documentAttributes: nil
+            ).string
+            let wroteString = pasteboard.setString(plainText, forType: .string)
+            succeeded = wroteRTF && wroteString
 
         case .imagePNG(let data):
             pasteboard.declareTypes([.png], owner: nil)

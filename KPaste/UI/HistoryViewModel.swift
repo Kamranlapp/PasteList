@@ -2,6 +2,16 @@ import Combine
 import Foundation
 import GRDB
 
+enum ClipHistoryFilter: String, CaseIterable, Identifiable {
+    case all = "All"
+    case texts = "Texts"
+    case images = "Images"
+    case files = "Files"
+    case folders = "Folders"
+
+    var id: Self { self }
+}
+
 actor ClipHistoryActions {
     private let repository: ClipRepository
     private let blobStorage: BlobStorage
@@ -27,6 +37,23 @@ actor ClipHistoryActions {
             try blobStorage.deleteAll(for: id)
         }
     }
+
+    func clearHistory() throws {
+        let deletedIDs = try repository.deleteAll()
+        var deletionError: Error?
+
+        for id in deletedIDs {
+            do {
+                try blobStorage.deleteAll(for: id)
+            } catch {
+                deletionError = deletionError ?? error
+            }
+        }
+
+        if let deletionError {
+            throw deletionError
+        }
+    }
 }
 
 @MainActor
@@ -36,6 +63,8 @@ final class HistoryViewModel: ObservableObject {
     @Published private(set) var isLoading = true
     @Published private(set) var errorMessage: String?
     @Published private(set) var selectedClipIDs: [Int64] = []
+    @Published private(set) var isPerformingPaste = false
+    @Published private(set) var isRestoring = false
     @Published var separatorOption: BulkSeparatorOption {
         didSet {
             userDefaults.set(separatorOption.rawValue, forKey: DefaultsKey.separatorOption)
@@ -54,8 +83,17 @@ final class HistoryViewModel: ObservableObject {
             startObservation()
         }
     }
+    @Published var filter: ClipHistoryFilter = .all {
+        didSet {
+            guard filter != oldValue, let latestSnapshot else {
+                return
+            }
+            apply(latestSnapshot)
+        }
+    }
 
     private let repository: ClipRepository
+    private let blobStorage: BlobStorage
     private let actions: ClipHistoryActions
     private let restorer: ClipRestorer
     private let bulkPasteController: BulkPasteController
@@ -63,6 +101,10 @@ final class HistoryViewModel: ObservableObject {
     private let userDefaults: UserDefaults
     private var selectedClips: [Int64: ClipRecord] = [:]
     private var observation: AnyDatabaseCancellable?
+    private var pasteTask: Task<Void, Never>?
+    private var restoreTask: Task<Void, Never>?
+    private var selectionRevision = 0
+    private var latestSnapshot: ClipHistorySnapshot?
 
     init(
         repository: ClipRepository,
@@ -73,6 +115,7 @@ final class HistoryViewModel: ObservableObject {
         onRestored: @escaping () -> Void
     ) {
         self.repository = repository
+        self.blobStorage = blobStorage
         actions = ClipHistoryActions(repository: repository, blobStorage: blobStorage)
         self.restorer = restorer
         self.bulkPasteController = bulkPasteController
@@ -88,10 +131,7 @@ final class HistoryViewModel: ObservableObject {
     var selectedCount: Int { selectedClipIDs.count }
 
     func canBulkSelect(_ clip: ClipRecord) -> Bool {
-        switch ClipContentType(rawValue: clip.type) {
-        case .text, .url, .rtf: clip.id != nil
-        case .image, .file, nil: false
-        }
+        clip.primaryInteraction == .textSelection && clip.id != nil
     }
 
     func selectionIndex(for clip: ClipRecord) -> Int? {
@@ -112,6 +152,7 @@ final class HistoryViewModel: ObservableObject {
             selectedClipIDs.append(id)
             selectedClips[id] = clip
         }
+        selectionRevision &+= 1
     }
 
     func replaceSelection(with clips: [ClipRecord]) {
@@ -122,55 +163,44 @@ final class HistoryViewModel: ObservableObject {
                 clip.id.map { ($0, clip) }
             }
         )
+        selectionRevision &+= 1
     }
 
     func clearSelection() {
+        guard !selectedClipIDs.isEmpty || !selectedClips.isEmpty else {
+            return
+        }
         selectedClipIDs.removeAll()
         selectedClips.removeAll()
+        selectionRevision &+= 1
     }
 
     func pasteSelection() {
-        let clips = selectedClipIDs.compactMap { selectedClips[$0] }
         let separator = separatorOption.value(customValue: customSeparator)
-        Task {
-            do {
-                try await bulkPasteController.paste(clips, separator: separator)
-                clearSelection()
-                onRestored()
-            } catch {
-                errorMessage = error.localizedDescription
-            }
-        }
+        startPaste(.separator(separator))
     }
 
-    func pasteSelectionAsIs() {
-        let clips = selectedClipIDs.compactMap { selectedClips[$0] }
-        Task {
-            do {
-                try await bulkPasteController.paste(clips, separator: "")
-                clearSelection()
-                onRestored()
-            } catch {
-                errorMessage = error.localizedDescription
-            }
-        }
+    func pasteSelectionWithSpaces() {
+        startPaste(.separator(" "))
     }
 
     func pasteSelection(format: BulkPasteFormat) {
-        let clips = selectedClipIDs.compactMap { selectedClips[$0] }
-        Task {
-            do {
-                try await bulkPasteController.paste(clips, format: format)
-                clearSelection()
-                onRestored()
-            } catch {
-                errorMessage = error.localizedDescription
-            }
-        }
+        startPaste(.format(format))
     }
 
     func restore(_ clip: ClipRecord) {
-        Task {
+        guard restoreTask == nil else {
+            return
+        }
+        isRestoring = true
+        restoreTask = Task { [weak self, restorer] in
+            guard let self else {
+                return
+            }
+            defer {
+                isRestoring = false
+                restoreTask = nil
+            }
             do {
                 try await restorer.restore(clip)
                 onRestored()
@@ -190,15 +220,60 @@ final class HistoryViewModel: ObservableObject {
         if let id = clip.id, let index = selectedClipIDs.firstIndex(of: id) {
             selectedClipIDs.remove(at: index)
             selectedClips[id] = nil
+            selectionRevision &+= 1
         }
         performAction { [actions] in
             try await actions.delete(clip)
         }
     }
 
+    func clearHistory() {
+        clearSelection()
+        performAction { [actions] in
+            try await actions.clearHistory()
+        }
+    }
+
     private enum DefaultsKey {
         static let separatorOption = "bulkPaste.separatorOption"
         static let customSeparator = "bulkPaste.customSeparator"
+    }
+
+    private enum PasteRequest {
+        case separator(String)
+        case format(BulkPasteFormat)
+    }
+
+    private func startPaste(_ request: PasteRequest) {
+        guard pasteTask == nil else {
+            return
+        }
+        let clips = selectedClipIDs.compactMap { selectedClips[$0] }
+        let revision = selectionRevision
+        isPerformingPaste = true
+        pasteTask = Task { [weak self, bulkPasteController] in
+            guard let self else {
+                return
+            }
+            defer {
+                isPerformingPaste = false
+                pasteTask = nil
+            }
+            do {
+                switch request {
+                case .separator(let separator):
+                    try await bulkPasteController.paste(clips, separator: separator)
+                case .format(let format):
+                    try await bulkPasteController.paste(clips, format: format)
+                }
+                if selectionRevision == revision {
+                    clearSelection()
+                }
+                onRestored()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
     }
 
     private func startObservation() {
@@ -213,12 +288,55 @@ final class HistoryViewModel: ObservableObject {
                 self?.errorMessage = error.localizedDescription
             },
             onChange: { [weak self] snapshot in
-                self?.pinned = snapshot.pinned
-                self?.history = snapshot.history
-                self?.isLoading = false
-                self?.errorMessage = nil
+                self?.apply(snapshot)
             }
         )
+    }
+
+    private func apply(_ snapshot: ClipHistorySnapshot) {
+        latestSnapshot = snapshot
+        pinned = snapshot.pinned.filter(matchesCurrentFilter)
+        history = snapshot.history.filter(matchesCurrentFilter)
+        isLoading = false
+        errorMessage = nil
+
+        let currentClips = Dictionary(
+            uniqueKeysWithValues: (pinned + history).compactMap { clip in
+                clip.id.map { ($0, clip) }
+            }
+        )
+        let reconciledIDs = selectedClipIDs.filter { currentClips[$0] != nil }
+        if reconciledIDs != selectedClipIDs {
+            selectedClipIDs = reconciledIDs
+            selectionRevision &+= 1
+        }
+        selectedClips = Dictionary(
+            uniqueKeysWithValues: reconciledIDs.compactMap { id in
+                currentClips[id].map { (id, $0) }
+            }
+        )
+    }
+
+    private func matchesCurrentFilter(_ clip: ClipRecord) -> Bool {
+        switch filter {
+        case .all:
+            return true
+        case .texts:
+            switch ClipContentType(rawValue: clip.type) {
+            case .text, .rtf, .url:
+                return true
+            case .image, .file, nil:
+                return false
+            }
+        case .images:
+            return ClipContentType(rawValue: clip.type) == .image
+        case .files:
+            return ClipContentType(rawValue: clip.type) == .file
+                && (try? blobStorage.containsFolder(for: clip)) != true
+        case .folders:
+            return ClipContentType(rawValue: clip.type) == .file
+                && (try? blobStorage.containsFolder(for: clip)) == true
+        }
     }
 
     private func performAction(

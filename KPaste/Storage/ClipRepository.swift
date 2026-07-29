@@ -95,6 +95,15 @@ final class ClipRepository: Sendable {
     }
 
     @discardableResult
+    func deleteAll() throws -> [Int64] {
+        try databasePool.write { database in
+            let ids = try ClipRecord.fetchAll(database).compactMap(\.id)
+            _ = try ClipRecord.deleteAll(database)
+            return ids
+        }
+    }
+
+    @discardableResult
     func markUsed(id: Int64, at date: Date = Date()) throws -> Bool {
         try databasePool.write { database in
             try ClipRecord

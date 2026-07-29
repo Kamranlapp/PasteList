@@ -3,6 +3,16 @@ import Foundation
 import ServiceManagement
 
 @MainActor
+protocol LaunchAtLoginServicing: AnyObject {
+    var status: SMAppService.Status { get }
+
+    func register() throws
+    func unregister() throws
+}
+
+extension SMAppService: LaunchAtLoginServicing {}
+
+@MainActor
 final class LaunchAtLoginController: ObservableObject {
     @Published private(set) var isEnabled = false
     @Published private(set) var statusText = "Not configured"
@@ -12,11 +22,11 @@ final class LaunchAtLoginController: ObservableObject {
         static let completedInitialSetup = "launchAtLogin.completedInitialSetup"
     }
 
-    private let service: SMAppService
+    private let service: any LaunchAtLoginServicing
     private let userDefaults: UserDefaults
 
     init(
-        service: SMAppService = .mainApp,
+        service: any LaunchAtLoginServicing = SMAppService.mainApp,
         userDefaults: UserDefaults = .standard
     ) {
         self.service = service
@@ -25,26 +35,10 @@ final class LaunchAtLoginController: ObservableObject {
     }
 
     func performInitialSetupIfNeeded() {
-        guard !userDefaults.bool(forKey: DefaultsKey.completedInitialSetup) else {
-            refresh()
-            return
-        }
-
-        defer {
+        if !userDefaults.bool(forKey: DefaultsKey.completedInitialSetup) {
             userDefaults.set(true, forKey: DefaultsKey.completedInitialSetup)
-            refresh()
         }
-
-        guard service.status != .enabled, service.status != .requiresApproval else {
-            return
-        }
-
-        do {
-            try service.register()
-            errorMessage = nil
-        } catch {
-            errorMessage = error.localizedDescription
-        }
+        refresh()
     }
 
     func setEnabled(_ enabled: Bool) {

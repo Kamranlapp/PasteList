@@ -1,6 +1,12 @@
 import Foundation
 import GRDB
 
+enum ClipPrimaryInteraction: Equatable {
+    case textSelection
+    case fileDrag
+    case restoreOnly
+}
+
 struct ClipRecord: Codable, Equatable, FetchableRecord, Identifiable, MutablePersistableRecord, Sendable {
     static let databaseTableName = "clips"
 
@@ -32,6 +38,17 @@ struct ClipRecord: Codable, Equatable, FetchableRecord, Identifiable, MutablePer
 
     mutating func didInsert(_ inserted: InsertionSuccess) {
         id = inserted.rowID
+    }
+
+    var primaryInteraction: ClipPrimaryInteraction {
+        switch ClipContentType(rawValue: type) {
+        case .text, .url, .rtf:
+            return .textSelection
+        case .image, .file:
+            return .fileDrag
+        case nil:
+            return .restoreOnly
+        }
     }
 
     enum Columns: String, ColumnExpression {

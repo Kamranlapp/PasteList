@@ -16,6 +16,17 @@ final class ClipRepositoryTests: XCTestCase {
         }
     }
 
+    func testDeleteAllReturnsDeletedIDsAndClearsPinnedAndHistory() throws {
+        try withRepository { repository, _ in
+            let history = try repository.insert(makeClip("History", at: 100))
+            let pinned = try repository.insert(makeClip("Pinned", at: 200, pinned: true))
+
+            XCTAssertEqual(Set(try repository.deleteAll()), Set([history.id, pinned.id].compactMap { $0 }))
+            XCTAssertEqual(try repository.fetchAll(), [])
+            XCTAssertEqual(try repository.deleteAll(), [])
+        }
+    }
+
     func testPinnedAndHistoryListsAreSortedNewestFirst() throws {
         try withRepository { repository, _ in
             let oldHistory = try repository.insert(makeClip("Old history", at: 100))

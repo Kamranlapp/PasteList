@@ -49,7 +49,9 @@ final class AccessibilityController: ObservableObject {
     func pasteIntoPreviousApplication() async -> Bool {
         refreshTrust()
         guard isTrusted else {
-            requestAccess()
+            // Only request Accessibility access in response to the explicit
+            // button in Preferences. Asking here makes macOS show the system
+            // prompt after every attempted paste while access is unavailable.
             return false
         }
 

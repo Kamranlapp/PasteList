@@ -12,22 +12,35 @@ final class StatusItemController: NSObject {
     )
     static let cursorScrollBarWidth: CGFloat = 8
     static let cursorScrollBarSpacing: CGFloat = 8
+    static let cursorBulkPasteRailWidth: CGFloat = 113
+    static let cursorBulkPasteRailSpacing: CGFloat = 8
     static let cursorWindowControlDiameter: CGFloat = 24
     static let cursorWindowControlSpacing: CGFloat = 8
+    static let cursorWindowTooltipHeight: CGFloat = 18
+    static let cursorPanelFadeDuration: TimeInterval = 0.3
+    static let cursorWindowControlAreaHeight = cursorWindowTooltipHeight
+        + cursorWindowControlDiameter
     static let cursorPanelSize = NSSize(
         width: cursorScrollBarWidth
             + cursorScrollBarSpacing
-            + cursorPanelSurfaceSize.width,
-        height: cursorWindowControlDiameter
+            + cursorPanelSurfaceSize.width
+            + cursorBulkPasteRailSpacing
+            + cursorBulkPasteRailWidth,
+        height: cursorWindowControlAreaHeight
             + cursorWindowControlSpacing
             + cursorPanelSurfaceSize.height
     )
-    static let cursorPanelMinimumSize = NSSize(width: 276, height: 332)
+    static let cursorPanelMinimumSize = NSSize(
+        width: 276 + cursorBulkPasteRailSpacing + cursorBulkPasteRailWidth,
+        height: 332
+    )
     static let cursorHorizontalAnchor = 0.75
     static let cursorFirstRowCenterFromTop: CGFloat = 56
     private static let screenEdgePadding: CGFloat = 8
     private static let cursorPanelWidthDefaultsKey = "cursorPanelWidth"
     private static let cursorPanelHeightDefaultsKey = "cursorPanelHeight"
+    private static let cursorPanelLayoutVersionDefaultsKey = "cursorPanelLayoutVersion"
+    private static let cursorPanelLayoutVersion = 2
 
     private let statusItem: NSStatusItem
     private let popover: NSPopover
@@ -37,6 +50,13 @@ final class StatusItemController: NSObject {
     private let accessibilityController: AccessibilityController
     private let onOpenSettings: () -> Void
     private var isCursorPanelPinned = false
+    private var isCursorPanelResizeModeEnabled = false
+    private var isCursorPanelFilterMenuPresented = false
+    private var isCursorPanelClearConfirmationPresented = false
+    private var localResizeExitMonitor: Any?
+    private var globalResizeExitMonitor: Any?
+    private var cursorPanelFadeGeneration = 0
+    private var isCursorPanelFadingOut = false
 
     init(
         repository: ClipRepository,
@@ -52,7 +72,7 @@ final class StatusItemController: NSObject {
         let initialCursorPanelSize = Self.storedCursorPanelSize()
         cursorPanel = CursorHistoryPanel(
             contentRect: NSRect(origin: .zero, size: initialCursorPanelSize),
-            styleMask: [.borderless, .resizable, .fullSizeContentView],
+            styleMask: [.borderless, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
@@ -87,10 +107,12 @@ final class StatusItemController: NSObject {
             return
         }
 
-        let image = NSImage(
-            systemSymbolName: "doc.on.clipboard",
-            accessibilityDescription: "KPaste"
-        )
+        let image = NSImage(named: "BarIcon")
+            ?? NSImage(
+                systemSymbolName: "doc.on.clipboard",
+                accessibilityDescription: "KPaste"
+            )
+        image?.size = NSSize(width: 22, height: 22)
         image?.isTemplate = true
         button.image = image
         button.toolTip = "KPaste"
@@ -158,6 +180,7 @@ final class StatusItemController: NSObject {
         cursorPanel.isReleasedWhenClosed = false
         cursorPanel.isFloatingPanel = true
         cursorPanel.level = .popUpMenu
+        cursorPanel.hidesOnDeactivate = false
         cursorPanel.backgroundColor = .clear
         cursorPanel.isOpaque = false
         cursorPanel.hasShadow = true
@@ -168,6 +191,9 @@ final class StatusItemController: NSObject {
             .fullScreenAuxiliary,
         ]
         cursorPanel.delegate = self
+        cursorPanel.cancelResizeMode = { [weak self] in
+            self?.finishCursorPanelResizeMode()
+        }
         cursorPanel.contentViewController = NSHostingController(
             rootView: HistoryView(
                 repository: repository,
@@ -189,6 +215,15 @@ final class StatusItemController: NSObject {
                 onCursorPanelPinChanged: { [weak self] isPinned in
                     self?.setCursorPanelPinned(isPinned)
                 },
+                onCursorPanelResizeModeChanged: { [weak self] isEnabled in
+                    self?.setCursorPanelResizeMode(isEnabled)
+                },
+                onCursorPanelFilterMenuPresentationChanged: { [weak self] isPresented in
+                    self?.isCursorPanelFilterMenuPresented = isPresented
+                },
+                onCursorPanelClearConfirmationChanged: { [weak self] isPresented in
+                    self?.isCursorPanelClearConfirmationPresented = isPresented
+                },
                 selectionResetController: selectionResetController
             )
         )
@@ -208,7 +243,7 @@ final class StatusItemController: NSObject {
     }
 
     func toggleCursorPanelAtPointer() {
-        if cursorPanel.isVisible {
+        if cursorPanel.isVisible && !isCursorPanelFadingOut {
             closeCursorPanel(force: true)
             return
         }
@@ -234,7 +269,17 @@ final class StatusItemController: NSObject {
             display: true
         )
         NSApp.activate(ignoringOtherApps: true)
+        cursorPanelFadeGeneration += 1
+        isCursorPanelFadingOut = false
+        cursorPanel.alphaValue = 0
         cursorPanel.makeKeyAndOrderFront(nil)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.cursorPanelFadeDuration
+            context.timingFunction = CAMediaTimingFunction(
+                name: .easeInEaseOut
+            )
+            cursorPanel.animator().alphaValue = 1
+        }
     }
 
     static func cursorPanelFrame(
@@ -258,12 +303,14 @@ final class StatusItemController: NSObject {
                 - (size.width
                     - cursorScrollBarWidth
                     - cursorScrollBarSpacing
+                    - cursorBulkPasteRailSpacing
+                    - cursorBulkPasteRailWidth
                     - cursorPanelPadding * 2)
                     * cursorHorizontalAnchor,
             y: pointerLocation.y
                 - (
                     size.height
-                        - cursorWindowControlDiameter
+                        - cursorWindowControlAreaHeight
                         - cursorWindowControlSpacing
                         - cursorPanelPadding
                         - cursorFirstRowCenterFromTop
@@ -286,8 +333,20 @@ final class StatusItemController: NSObject {
         guard width.isFinite, height.isFinite, width > 0, height > 0 else {
             return cursorPanelSize
         }
+        let storedLayoutVersion = userDefaults.integer(
+            forKey: cursorPanelLayoutVersionDefaultsKey
+        )
+        let migratedWidth = storedLayoutVersion < cursorPanelLayoutVersion
+            ? CGFloat(width) + cursorBulkPasteRailSpacing + cursorBulkPasteRailWidth
+            : CGFloat(width)
+        if storedLayoutVersion < cursorPanelLayoutVersion {
+            userDefaults.set(
+                cursorPanelLayoutVersion,
+                forKey: cursorPanelLayoutVersionDefaultsKey
+            )
+        }
         return NSSize(
-            width: max(CGFloat(width), cursorPanelMinimumSize.width),
+            width: max(migratedWidth, cursorPanelMinimumSize.width),
             height: max(CGFloat(height), cursorPanelMinimumSize.height)
         )
     }
@@ -298,6 +357,10 @@ final class StatusItemController: NSObject {
     ) {
         userDefaults.set(size.width, forKey: cursorPanelWidthDefaultsKey)
         userDefaults.set(size.height, forKey: cursorPanelHeightDefaultsKey)
+        userDefaults.set(
+            cursorPanelLayoutVersion,
+            forKey: cursorPanelLayoutVersionDefaultsKey
+        )
     }
 
     private func saveCursorPanelSize() {
@@ -314,7 +377,7 @@ final class StatusItemController: NSObject {
 
     private func didRestoreClip() {
         popover.performClose(nil)
-        closeCursorPanel(force: true)
+        closeCursorPanel()
         Task { [weak accessibilityController] in
             _ = await accessibilityController?.pasteIntoPreviousApplication()
         }
@@ -350,34 +413,140 @@ final class StatusItemController: NSObject {
 
     private func setCursorPanelPinned(_ isPinned: Bool) {
         isCursorPanelPinned = isPinned
-        cursorPanel.level = isPinned ? .floating : .popUpMenu
+        cursorPanel.level = .popUpMenu
+        cursorPanel.hidesOnDeactivate = false
         cursorPanel.collectionBehavior = isPinned
-            ? [.canJoinAllSpaces, .fullScreenAuxiliary]
+            ? [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
             : [.transient, .moveToActiveSpace, .fullScreenAuxiliary]
+    }
+
+    private func setCursorPanelResizeMode(_ isEnabled: Bool) {
+        guard isCursorPanelResizeModeEnabled != isEnabled else {
+            return
+        }
+        isCursorPanelResizeModeEnabled = isEnabled
+        if isEnabled {
+            installResizeExitMonitors()
+        } else {
+            removeResizeExitMonitors()
+            saveCursorPanelSize()
+        }
+    }
+
+    private func finishCursorPanelResizeMode() {
+        guard isCursorPanelResizeModeEnabled else {
+            return
+        }
+        setCursorPanelResizeMode(false)
+        selectionResetController.reset()
+    }
+
+    private func installResizeExitMonitors() {
+        removeResizeExitMonitors()
+        localResizeExitMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: .leftMouseDown
+        ) { [weak self] event in
+            self?.finishResizeModeIfClickIsFarFromEdge()
+            return event
+        }
+        globalResizeExitMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: .leftMouseDown
+        ) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.finishResizeModeIfClickIsFarFromEdge()
+            }
+        }
+    }
+
+    private func removeResizeExitMonitors() {
+        if let localResizeExitMonitor {
+            NSEvent.removeMonitor(localResizeExitMonitor)
+            self.localResizeExitMonitor = nil
+        }
+        if let globalResizeExitMonitor {
+            NSEvent.removeMonitor(globalResizeExitMonitor)
+            self.globalResizeExitMonitor = nil
+        }
+    }
+
+    private func finishResizeModeIfClickIsFarFromEdge() {
+        guard isCursorPanelResizeModeEnabled else {
+            return
+        }
+        let point = NSEvent.mouseLocation
+        let frame = cursorPanel.frame
+        let distance: CGFloat
+        if frame.contains(point) {
+            distance = min(
+                point.x - frame.minX,
+                frame.maxX - point.x,
+                point.y - frame.minY,
+                frame.maxY - point.y
+            )
+        } else {
+            let horizontalDistance = max(
+                frame.minX - point.x,
+                0,
+                point.x - frame.maxX
+            )
+            let verticalDistance = max(
+                frame.minY - point.y,
+                0,
+                point.y - frame.maxY
+            )
+            distance = hypot(horizontalDistance, verticalDistance)
+        }
+        if distance > 100 {
+            finishCursorPanelResizeMode()
+        }
     }
 
     private func closeCursorPanel(force: Bool = false) {
         guard force || !isCursorPanelPinned else {
             return
         }
+        setCursorPanelResizeMode(false)
         guard cursorPanel.isVisible else {
             return
         }
-        cursorPanel.orderOut(nil)
-        selectionResetController.reset()
+        guard !isCursorPanelFadingOut else {
+            return
+        }
+        cursorPanelFadeGeneration += 1
+        let fadeGeneration = cursorPanelFadeGeneration
+        isCursorPanelFadingOut = true
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.cursorPanelFadeDuration
+            context.timingFunction = CAMediaTimingFunction(
+                name: .easeInEaseOut
+            )
+            cursorPanel.animator().alphaValue = 0
+        } completionHandler: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard
+                    let self,
+                    cursorPanelFadeGeneration == fadeGeneration
+                else {
+                    return
+                }
+                cursorPanel.orderOut(nil)
+                cursorPanel.alphaValue = 1
+                isCursorPanelFadingOut = false
+                selectionResetController.reset()
+            }
+        }
     }
 }
 
 extension StatusItemController: NSWindowDelegate {
-    func windowDidResize(_ notification: Notification) {
+    func windowDidResignKey(_ notification: Notification) {
         guard notification.object as? NSWindow === cursorPanel else {
             return
         }
-        saveCursorPanelSize()
-    }
-
-    func windowDidResignKey(_ notification: Notification) {
-        guard notification.object as? NSWindow === cursorPanel else {
+        guard
+            !isCursorPanelFilterMenuPresented,
+            !isCursorPanelClearConfirmationPresented
+        else {
             return
         }
         closeCursorPanel()
@@ -403,8 +572,23 @@ final class HistorySelectionResetController: ObservableObject {
 }
 
 private final class CursorHistoryPanel: NSPanel {
+    var cancelResizeMode: (() -> Void)?
+
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    override func cancelOperation(_ sender: Any?) {
+        cancelResizeMode?()
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 {
+            cancelResizeMode?()
+        } else {
+            super.keyDown(with: event)
+        }
+    }
+
 }
 
 private struct StatusActionsView: View {

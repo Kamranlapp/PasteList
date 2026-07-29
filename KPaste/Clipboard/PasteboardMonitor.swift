@@ -155,19 +155,22 @@ actor PasteboardCaptureProcessor {
             return try repository.insert(clip)
 
         case .rtf(let data):
-            return try insertBlobBacked(clip) { id in
-                try self.blobStorage.saveRTF(data, for: id)
-            }
+            return try insertBlobBacked(
+                clip,
+                staged: blobStorage.stageRTF(data)
+            )
 
         case .imagePNG(let data):
-            return try insertBlobBacked(clip) { id in
-                try self.blobStorage.savePNGData(data, for: id)
-            }
+            return try insertBlobBacked(
+                clip,
+                staged: blobStorage.stagePNGData(data)
+            )
 
         case .files(let urls):
-            return try insertBlobBacked(clip) { id in
-                try self.blobStorage.saveFiles(at: urls, for: id)
-            }
+            return try insertBlobBacked(
+                clip,
+                staged: blobStorage.stageFiles(at: urls)
+            )
         }
     }
 
@@ -197,11 +200,14 @@ actor PasteboardCaptureProcessor {
 
     private func insertBlobBacked(
         _ clip: ClipRecord,
-        save: @escaping @Sendable (Int64) throws -> String
+        staged: BlobStorage.StagedContent
     ) throws -> ClipRecord {
-        try repository.insert(
+        defer { blobStorage.discard(staged) }
+        return try repository.insert(
             clip,
-            preparingContent: save,
+            preparingContent: { [blobStorage] id in
+                try blobStorage.commit(staged, for: id)
+            },
             rollbackContent: { [blobStorage] id in
                 try? blobStorage.deleteAll(for: id)
             }

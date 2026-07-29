@@ -2,6 +2,17 @@ import AppKit
 import Foundation
 
 final class BlobStorage: @unchecked Sendable {
+    struct StagedContent: Sendable {
+        fileprivate enum Kind: Sendable {
+            case rtf
+            case imagePNG
+            case files([String])
+        }
+
+        fileprivate let url: URL
+        fileprivate let kind: Kind
+    }
+
     enum StorageError: Error {
         case destinationAlreadyExists(URL)
         case duplicateFileName(String)
@@ -27,7 +38,9 @@ final class BlobStorage: @unchecked Sendable {
     }
 
     func saveRTF(_ data: Data, for clipID: Int64) throws -> String {
-        try saveData(data, as: "\(validated(clipID)).rtf", clipID: clipID)
+        let staged = try stageRTF(data)
+        defer { discard(staged) }
+        return try commit(staged, for: clipID)
     }
 
     func readRTF(for clipID: Int64) throws -> Data {
@@ -46,7 +59,9 @@ final class BlobStorage: @unchecked Sendable {
     }
 
     func savePNGData(_ pngData: Data, for clipID: Int64) throws -> String {
-        try saveData(pngData, as: "\(validated(clipID)).png", clipID: clipID)
+        let staged = try stagePNGData(pngData)
+        defer { discard(staged) }
+        return try commit(staged, for: clipID)
     }
 
     private func normalizedPNGData(from image: NSImage) throws -> Data {
@@ -73,7 +88,20 @@ final class BlobStorage: @unchecked Sendable {
     }
 
     func saveFiles(at sourceURLs: [URL], for clipID: Int64) throws -> String {
-        let clipID = try validated(clipID)
+        let staged = try stageFiles(at: sourceURLs)
+        defer { discard(staged) }
+        return try commit(staged, for: clipID)
+    }
+
+    func stageRTF(_ data: Data) throws -> StagedContent {
+        try stageData(data, kind: .rtf)
+    }
+
+    func stagePNGData(_ data: Data) throws -> StagedContent {
+        try stageData(data, kind: .imagePNG)
+    }
+
+    func stageFiles(at sourceURLs: [URL]) throws -> StagedContent {
         guard !sourceURLs.isEmpty else {
             throw StorageError.emptyFileSelection
         }
@@ -93,37 +121,69 @@ final class BlobStorage: @unchecked Sendable {
             }
         }
 
-        let directoryName = String(clipID)
-        let relativePaths = sourceURLs.map { "\(directoryName)/\($0.lastPathComponent)" }
-        let manifestData = try JSONEncoder().encode(relativePaths)
-        guard let manifest = String(data: manifestData, encoding: .utf8) else {
-            throw StorageError.invalidFileManifest
-        }
+        let stagingDirectory = stagingURL(isDirectory: true)
 
-        let destination = blobsDirectory.appendingPathComponent(directoryName, isDirectory: true)
-        try ensureDestinationIsAvailable(destination)
-
-        let stagingDirectory = stagingURL(for: clipID, isDirectory: true)
-        defer {
-            try? fileManager.removeItem(at: stagingDirectory)
-        }
-
-        try fileManager.createDirectory(
-            at: stagingDirectory,
-            withIntermediateDirectories: false
-        )
-        for sourceURL in sourceURLs {
-            try fileManager.copyItem(
-                at: sourceURL,
-                to: stagingDirectory.appendingPathComponent(
-                    sourceURL.lastPathComponent,
-                    isDirectory: sourceURL.hasDirectoryPath
+        do {
+            try fileManager.createDirectory(
+                at: stagingDirectory,
+                withIntermediateDirectories: false
+            )
+            for sourceURL in sourceURLs {
+                try fileManager.copyItem(
+                    at: sourceURL,
+                    to: stagingDirectory.appendingPathComponent(
+                        sourceURL.lastPathComponent,
+                        isDirectory: sourceURL.hasDirectoryPath
+                    )
                 )
+            }
+        } catch {
+            try? fileManager.removeItem(at: stagingDirectory)
+            throw error
+        }
+
+        return StagedContent(
+            url: stagingDirectory,
+            kind: .files(sourceURLs.map(\.lastPathComponent))
+        )
+    }
+
+    func commit(_ staged: StagedContent, for clipID: Int64) throws -> String {
+        let clipID = try validated(clipID)
+        let relativePath: String
+        let destination: URL
+
+        switch staged.kind {
+        case .rtf:
+            relativePath = "\(clipID).rtf"
+            destination = try url(forRelativePath: relativePath)
+        case .imagePNG:
+            relativePath = "\(clipID).png"
+            destination = try url(forRelativePath: relativePath)
+        case .files(let names):
+            let directoryName = String(clipID)
+            let relativePaths = names.map { "\(directoryName)/\($0)" }
+            let manifestData = try JSONEncoder().encode(relativePaths)
+            guard let manifest = String(data: manifestData, encoding: .utf8) else {
+                throw StorageError.invalidFileManifest
+            }
+            relativePath = manifest
+            destination = blobsDirectory.appendingPathComponent(
+                directoryName,
+                isDirectory: true
             )
         }
-        try fileManager.moveItem(at: stagingDirectory, to: destination)
 
-        return manifest
+        try ensureDestinationIsAvailable(destination)
+        try fileManager.moveItem(at: staged.url, to: destination)
+        return relativePath
+    }
+
+    func discard(_ staged: StagedContent) {
+        guard fileManager.fileExists(atPath: staged.url.path) else {
+            return
+        }
+        try? fileManager.removeItem(at: staged.url)
     }
 
     func fileURLs(from manifest: String) throws -> [URL] {
@@ -156,6 +216,16 @@ final class BlobStorage: @unchecked Sendable {
             return try fileURLs(from: clip.content)
         case .text, .rtf, .url, nil:
             return []
+        }
+    }
+
+    func containsFolder(for clip: ClipRecord) throws -> Bool {
+        guard ClipContentType(rawValue: clip.type) == .file else {
+            return false
+        }
+
+        return try fileURLs(from: clip.content).contains { url in
+            try url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true
         }
     }
 
@@ -238,23 +308,10 @@ final class BlobStorage: @unchecked Sendable {
         }
     }
 
-    private func saveData(
-        _ data: Data,
-        as relativePath: String,
-        clipID: Int64
-    ) throws -> String {
-        let clipID = try validated(clipID)
-        let destination = try url(forRelativePath: relativePath)
-        try ensureDestinationIsAvailable(destination)
-
-        let stagingFile = stagingURL(for: clipID, isDirectory: false)
-        defer {
-            try? fileManager.removeItem(at: stagingFile)
-        }
-
+    private func stageData(_ data: Data, kind: StagedContent.Kind) throws -> StagedContent {
+        let stagingFile = stagingURL(isDirectory: false)
         try data.write(to: stagingFile, options: .atomic)
-        try fileManager.moveItem(at: stagingFile, to: destination)
-        return relativePath
+        return StagedContent(url: stagingFile, kind: kind)
     }
 
     private func ensureDestinationIsAvailable(_ destination: URL) throws {
@@ -276,9 +333,9 @@ final class BlobStorage: @unchecked Sendable {
         return Int64(stem).map { $0 > 0 } == true
     }
 
-    private func stagingURL(for clipID: Int64, isDirectory: Bool) -> URL {
+    private func stagingURL(isDirectory: Bool) -> URL {
         blobsDirectory.appendingPathComponent(
-            ".staging-\(clipID)-\(UUID().uuidString)",
+            ".staging-\(UUID().uuidString)",
             isDirectory: isDirectory
         )
     }
