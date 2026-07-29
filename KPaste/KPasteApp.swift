@@ -41,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
             let monitor = PasteboardMonitor(processor: processor)
             let accessibilityController = AccessibilityController()
+            accessibilityController.requestAccessOnFirstLaunchIfNeeded()
             let launchAtLoginController = LaunchAtLoginController()
             launchAtLoginController.performInitialSetupIfNeeded()
             let retentionScheduler = RetentionScheduler(

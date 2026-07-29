@@ -119,6 +119,7 @@ struct HistoryView: View {
                     CursorPanelControls(
                         isPinned: $isCursorPanelPinned,
                         isResizeModeEnabled: $isCursorPanelResizeModeEnabled,
+                        pastesAsPlainText: $viewModel.pastesAsPlainText,
                         filter: $viewModel.filter,
                         pinChanged: onCursorPanelPinChanged,
                         resizeModeChanged: onCursorPanelResizeModeChanged,

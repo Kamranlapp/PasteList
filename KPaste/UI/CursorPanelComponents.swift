@@ -4,6 +4,7 @@ import SwiftUI
 struct CursorPanelControls: View {
     @Binding var isPinned: Bool
     @Binding var isResizeModeEnabled: Bool
+    @Binding var pastesAsPlainText: Bool
     @Binding var filter: ClipHistoryFilter
     let pinChanged: (Bool) -> Void
     let resizeModeChanged: (Bool) -> Void
@@ -19,6 +20,7 @@ struct CursorPanelControls: View {
         case pin = "Pin"
         case move = "Move"
         case resize = "Resize"
+        case plainText = "Plain text"
         case filter = "Filter"
         case clear = "Clear"
     }
@@ -69,6 +71,18 @@ struct CursorPanelControls: View {
                 .overlay(alignment: .top) { tooltip(for: .resize) }
                 .onHover { setHoveredControl(.resize, isInside: $0) }
 
+                Button {
+                    pastesAsPlainText.toggle()
+                } label: {
+                    controlCircle(
+                        systemName: "textformat",
+                        isActive: pastesAsPlainText
+                    )
+                }
+                .buttonStyle(.plain)
+                .overlay(alignment: .top) { tooltip(for: .plainText) }
+                .onHover { setHoveredControl(.plainText, isInside: $0) }
+
                 ZStack {
                     controlCircle(
                         systemName: "line.3.horizontal.decrease",
@@ -106,7 +120,7 @@ struct CursorPanelControls: View {
             .opacity(isHovering || isFilterMenuPresented || showsClearConfirmation ? 1 : 0)
             .allowsHitTesting(isHovering || isFilterMenuPresented || showsClearConfirmation)
         }
-        .frame(width: 186, height: 92, alignment: .topLeading)
+        .frame(width: 218, height: 92, alignment: .topLeading)
         .alert("Clear Clipboard History?", isPresented: clearConfirmationBinding) {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive, action: clearHistory)

@@ -82,17 +82,25 @@ final class ClipRestorer {
         self.monitor = monitor
     }
 
-    func restore(_ clip: ClipRecord) async throws {
+    func restore(
+        _ clip: ClipRecord,
+        asPlainText: Bool = false
+    ) async throws {
         let payload = try await dataSource.payload(for: clip)
         try monitor.performSelfWrite { pasteboard in
-            try write(payload, to: pasteboard)
+            try write(
+                payload,
+                to: pasteboard,
+                asPlainText: asPlainText
+            )
         }
         try await dataSource.markUsed(clip)
     }
 
     private func write(
         _ payload: RestoredPasteboardPayload,
-        to pasteboard: NSPasteboard
+        to pasteboard: NSPasteboard,
+        asPlainText: Bool
     ) throws {
         let succeeded: Bool
 
@@ -102,21 +110,31 @@ final class ClipRestorer {
             succeeded = pasteboard.setString(text, forType: .string)
 
         case .url(let value):
-            pasteboard.declareTypes([.URL, .string], owner: nil)
-            let wroteURL = pasteboard.setString(value, forType: .URL)
-            let wroteString = pasteboard.setString(value, forType: .string)
-            succeeded = wroteURL && wroteString
+            if asPlainText {
+                pasteboard.declareTypes([.string], owner: nil)
+                succeeded = pasteboard.setString(value, forType: .string)
+            } else {
+                pasteboard.declareTypes([.URL, .string], owner: nil)
+                let wroteURL = pasteboard.setString(value, forType: .URL)
+                let wroteString = pasteboard.setString(value, forType: .string)
+                succeeded = wroteURL && wroteString
+            }
 
         case .rtf(let data):
-            pasteboard.declareTypes([.rtf, .string], owner: nil)
-            let wroteRTF = pasteboard.setData(data, forType: .rtf)
             let plainText = try NSAttributedString(
                 data: data,
                 options: [.documentType: NSAttributedString.DocumentType.rtf],
                 documentAttributes: nil
             ).string
-            let wroteString = pasteboard.setString(plainText, forType: .string)
-            succeeded = wroteRTF && wroteString
+            if asPlainText {
+                pasteboard.declareTypes([.string], owner: nil)
+                succeeded = pasteboard.setString(plainText, forType: .string)
+            } else {
+                pasteboard.declareTypes([.rtf, .string], owner: nil)
+                let wroteRTF = pasteboard.setData(data, forType: .rtf)
+                let wroteString = pasteboard.setString(plainText, forType: .string)
+                succeeded = wroteRTF && wroteString
+            }
 
         case .imagePNG(let data):
             pasteboard.declareTypes([.png], owner: nil)

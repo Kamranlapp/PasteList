@@ -3,9 +3,8 @@ import SwiftUI
 
 @MainActor
 final class StatusItemController: NSObject {
-    static let popoverSize = NSSize(width: 294, height: 392)
+    static let cursorPanelContentSize = NSSize(width: 294, height: 392)
     static let cursorPanelPadding: CGFloat = 12
-    static let cursorPanelContentSize = popoverSize
     static let cursorPanelSurfaceSize = NSSize(
         width: cursorPanelContentSize.width + cursorPanelPadding * 2,
         height: cursorPanelContentSize.height + cursorPanelPadding * 2
@@ -43,7 +42,6 @@ final class StatusItemController: NSObject {
     private static let cursorPanelLayoutVersion = 2
 
     private let statusItem: NSStatusItem
-    private let popover: NSPopover
     private let actionsPopover: NSPopover
     private let cursorPanel: CursorHistoryPanel
     private let selectionResetController: HistorySelectionResetController
@@ -66,7 +64,6 @@ final class StatusItemController: NSObject {
         onOpenSettings: @escaping () -> Void
     ) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        popover = NSPopover()
         actionsPopover = NSPopover()
         selectionResetController = HistorySelectionResetController()
         let initialCursorPanelSize = Self.storedCursorPanelSize()
@@ -81,25 +78,12 @@ final class StatusItemController: NSObject {
         super.init()
 
         configureStatusItem()
-        configurePopover(
-            repository: repository,
-            blobStorage: blobStorage,
-            pasteboardMonitor: pasteboardMonitor
-        )
         configureCursorPanel(
             repository: repository,
             blobStorage: blobStorage,
             pasteboardMonitor: pasteboardMonitor
         )
         configureActionsPopover()
-    }
-
-    func togglePopover() {
-        if popover.isShown {
-            popover.performClose(nil)
-        } else {
-            showPopover()
-        }
     }
 
     private func configureStatusItem() {
@@ -137,37 +121,6 @@ final class StatusItemController: NSObject {
                 quit: {
                     NSApp.terminate(nil)
                 }
-            )
-        )
-    }
-
-    private func configurePopover(
-        repository: ClipRepository,
-        blobStorage: BlobStorage,
-        pasteboardMonitor: PasteboardMonitor
-    ) {
-        popover.behavior = .transient
-        popover.animates = true
-        popover.delegate = self
-        popover.contentSize = Self.popoverSize
-        popover.contentViewController = NSHostingController(
-            rootView: HistoryView(
-                repository: repository,
-                blobStorage: blobStorage,
-                restorer: ClipRestorer(
-                    repository: repository,
-                    blobStorage: blobStorage,
-                    monitor: pasteboardMonitor
-                ),
-                bulkPasteController: BulkPasteController(
-                    repository: repository,
-                    blobStorage: blobStorage,
-                    monitor: pasteboardMonitor
-                ),
-                onRestored: { [weak self] in
-                    self?.didRestoreClip()
-                },
-                selectionResetController: selectionResetController
             )
         )
     }
@@ -229,26 +182,12 @@ final class StatusItemController: NSObject {
         )
     }
 
-    func showPopover() {
-        guard let button = statusItem.button else {
-            return
-        }
-
-        actionsPopover.performClose(nil)
-        closeCursorPanel(force: true)
-        selectionResetController.reset()
-        accessibilityController.rememberFrontmostApplication()
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        popover.contentViewController?.view.window?.makeKey()
-    }
-
     func toggleCursorPanelAtPointer() {
         if cursorPanel.isVisible && !isCursorPanelFadingOut {
             closeCursorPanel(force: true)
             return
         }
 
-        popover.performClose(nil)
         actionsPopover.performClose(nil)
         selectionResetController.reset()
         accessibilityController.rememberFrontmostApplication()
@@ -371,15 +310,46 @@ final class StatusItemController: NSObject {
         if NSApp.currentEvent?.type == .rightMouseUp {
             toggleActionsPopover()
         } else {
-            togglePopover()
+            toggleCursorPanelAtPointer()
         }
     }
 
     private func didRestoreClip() {
-        popover.performClose(nil)
         closeCursorPanel()
-        Task { [weak accessibilityController] in
-            _ = await accessibilityController?.pasteIntoPreviousApplication()
+        Task { [weak self] in
+            guard let self else {
+                return
+            }
+            do {
+                _ = try await accessibilityController.pasteIntoPreviousApplication()
+            } catch {
+                presentPasteError(error)
+            }
+        }
+    }
+
+    private func presentPasteError(_ error: Error) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        if
+            let iconURL = Bundle.main.url(
+                forResource: "AppIcon",
+                withExtension: "icns"
+            ),
+            let icon = NSImage(contentsOf: iconURL)
+        {
+            alert.icon = icon
+        }
+        alert.messageText = error is AccessibilityPasteError
+            ? "Accessibility Access Required"
+            : "Couldn’t Paste"
+        alert.informativeText = error.localizedDescription
+        alert.addButton(withTitle: "Open System Settings")
+        alert.addButton(withTitle: "Cancel")
+
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn {
+            accessibilityController.openAccessibilitySettings()
         }
     }
 
@@ -389,7 +359,6 @@ final class StatusItemController: NSObject {
             return
         }
 
-        popover.performClose(nil)
         closeCursorPanel(force: true)
         guard let button = statusItem.button else {
             return
@@ -550,15 +519,6 @@ extension StatusItemController: NSWindowDelegate {
             return
         }
         closeCursorPanel()
-    }
-}
-
-extension StatusItemController: NSPopoverDelegate {
-    func popoverDidClose(_ notification: Notification) {
-        guard notification.object as? NSPopover === popover else {
-            return
-        }
-        selectionResetController.reset()
     }
 }
 

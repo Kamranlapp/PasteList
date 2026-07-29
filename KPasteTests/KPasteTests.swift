@@ -38,12 +38,50 @@ final class KPasteTests: XCTestCase {
     }
 
     @MainActor
+    func testAccessibilityAccessIsRequestedOnlyOnFirstLaunch() throws {
+        let suiteName = "KPasteTests.accessibility.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        var promptCount = 0
+        let controller = AccessibilityController(
+            checkTrust: { false },
+            promptForAccess: {
+                promptCount += 1
+                return false
+            }
+        )
+
+        XCTAssertTrue(
+            controller.requestAccessOnFirstLaunchIfNeeded(userDefaults: defaults)
+        )
+        XCTAssertFalse(
+            controller.requestAccessOnFirstLaunchIfNeeded(userDefaults: defaults)
+        )
+        XCTAssertEqual(promptCount, 1)
+    }
+
+    @MainActor
+    func testPasteReportsMissingAccessibilityAccess() async {
+        let controller = AccessibilityController(
+            checkTrust: { false },
+            promptForAccess: { false }
+        )
+
+        do {
+            _ = try await controller.pasteIntoPreviousApplication()
+            XCTFail("Expected Accessibility access error")
+        } catch {
+            XCTAssertEqual(error as? AccessibilityPasteError, .accessRequired)
+        }
+    }
+
+    @MainActor
     func testCursorPanelPlacesPointerOverFirstRowAwayFromScreenEdges() {
         let pointer = NSPoint(x: 800, y: 600)
         let expectedHorizontalPosition = StatusItemController.cursorScrollBarWidth
             + StatusItemController.cursorScrollBarSpacing
             + StatusItemController.cursorPanelPadding
-            + StatusItemController.popoverSize.width
+            + StatusItemController.cursorPanelContentSize.width
                 * StatusItemController.cursorHorizontalAnchor
         let expectedVerticalPosition = StatusItemController.cursorWindowControlAreaHeight
             + StatusItemController.cursorWindowControlSpacing

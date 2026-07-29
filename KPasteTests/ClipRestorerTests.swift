@@ -120,6 +120,59 @@ final class ClipRestorerTests: XCTestCase {
         XCTAssertEqual(restoredURLs, [expectedFileURL])
     }
 
+    func testPlainTextModeStripsRichTextAndURLPasteboardTypes() async throws {
+        let harness = try makeHarness()
+        defer { harness.cleanUp() }
+        let pasteboard = NSPasteboard.withUniqueName()
+        pasteboard.clearContents()
+        defer { pasteboard.clearContents() }
+        let restorer = harness.makeRestorer(
+            monitor: harness.makeMonitor(pasteboard: pasteboard)
+        )
+        let storage = harness.blobStorage
+
+        let richText = NSAttributedString(
+            string: "Styled text",
+            attributes: [.font: NSFont.boldSystemFont(ofSize: 16)]
+        )
+        let rtfData = try richText.data(
+            from: NSRange(location: 0, length: richText.length),
+            documentAttributes: [
+                .documentType: NSAttributedString.DocumentType.rtf,
+            ]
+        )
+        let rtf = try insertBlobClip(
+            type: .rtf,
+            preview: "Styled text",
+            repository: harness.repository,
+            storage: harness.blobStorage
+        ) { id in
+            try storage.saveRTF(rtfData, for: id)
+        }
+
+        try await restorer.restore(rtf, asPlainText: true)
+
+        XCTAssertTrue(pasteboard.types?.contains(.string) == true)
+        XCTAssertEqual(pasteboard.string(forType: .string), "Styled text")
+        XCTAssertNil(pasteboard.data(forType: .rtf))
+
+        let urlValue = "https://example.com/plain"
+        let url = try harness.repository.insert(
+            ClipRecord(
+                type: ClipContentType.url.rawValue,
+                content: urlValue,
+                previewText: urlValue,
+                createdAt: Date()
+            )
+        )
+
+        try await restorer.restore(url, asPlainText: true)
+
+        XCTAssertTrue(pasteboard.types?.contains(.string) == true)
+        XCTAssertEqual(pasteboard.string(forType: .string), urlValue)
+        XCTAssertNil(pasteboard.string(forType: .URL))
+    }
+
     func testThumbnailIsDecodedOffTheStoredPNGAndBounded() async throws {
         let harness = try makeHarness()
         defer { harness.cleanUp() }

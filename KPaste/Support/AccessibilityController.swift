@@ -3,14 +3,42 @@ import AppKit
 import Combine
 import Foundation
 
+enum AccessibilityPasteError: LocalizedError, Equatable {
+    case accessRequired
+
+    var errorDescription: String? {
+        switch self {
+        case .accessRequired:
+            """
+            KPaste needs Accessibility access to paste into other apps. \
+            Grant access in System Settings → Privacy & Security → Accessibility.
+            """
+        }
+    }
+}
+
 @MainActor
 final class AccessibilityController: ObservableObject {
     @Published private(set) var isTrusted: Bool
 
+    private static let didRequestAccessDefaultsKey = "accessibility.didRequestAccess"
+
+    private let checkTrust: () -> Bool
+    private let promptForAccess: () -> Bool
     private var previousApplication: NSRunningApplication?
 
-    init() {
-        isTrusted = AXIsProcessTrusted()
+    init(
+        checkTrust: @escaping () -> Bool = { AXIsProcessTrusted() },
+        promptForAccess: @escaping () -> Bool = {
+            let options = [
+                kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true,
+            ] as CFDictionary
+            return AXIsProcessTrustedWithOptions(options)
+        }
+    ) {
+        self.checkTrust = checkTrust
+        self.promptForAccess = promptForAccess
+        isTrusted = checkTrust()
     }
 
     func rememberFrontmostApplication() {
@@ -26,14 +54,29 @@ final class AccessibilityController: ObservableObject {
     }
 
     func refreshTrust() {
-        isTrusted = AXIsProcessTrusted()
+        isTrusted = checkTrust()
     }
 
     func requestAccess() {
-        let options = [
-            kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true,
-        ] as CFDictionary
-        isTrusted = AXIsProcessTrustedWithOptions(options)
+        isTrusted = promptForAccess()
+    }
+
+    @discardableResult
+    func requestAccessOnFirstLaunchIfNeeded(
+        userDefaults: UserDefaults = .standard
+    ) -> Bool {
+        guard !userDefaults.bool(forKey: Self.didRequestAccessDefaultsKey) else {
+            return false
+        }
+
+        userDefaults.set(true, forKey: Self.didRequestAccessDefaultsKey)
+        refreshTrust()
+        guard !isTrusted else {
+            return false
+        }
+
+        requestAccess()
+        return true
     }
 
     func openAccessibilitySettings() {
@@ -46,13 +89,10 @@ final class AccessibilityController: ObservableObject {
     }
 
     @discardableResult
-    func pasteIntoPreviousApplication() async -> Bool {
+    func pasteIntoPreviousApplication() async throws -> Bool {
         refreshTrust()
         guard isTrusted else {
-            // Only request Accessibility access in response to the explicit
-            // button in Preferences. Asking here makes macOS show the system
-            // prompt after every attempted paste while access is unavailable.
-            return false
+            throw AccessibilityPasteError.accessRequired
         }
 
         guard

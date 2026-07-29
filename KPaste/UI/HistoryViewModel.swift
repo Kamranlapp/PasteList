@@ -65,6 +65,14 @@ final class HistoryViewModel: ObservableObject {
     @Published private(set) var selectedClipIDs: [Int64] = []
     @Published private(set) var isPerformingPaste = false
     @Published private(set) var isRestoring = false
+    @Published var pastesAsPlainText: Bool {
+        didSet {
+            userDefaults.set(
+                pastesAsPlainText,
+                forKey: DefaultsKey.pastesAsPlainText
+            )
+        }
+    }
     @Published var separatorOption: BulkSeparatorOption {
         didSet {
             userDefaults.set(separatorOption.rawValue, forKey: DefaultsKey.separatorOption)
@@ -121,6 +129,9 @@ final class HistoryViewModel: ObservableObject {
         self.bulkPasteController = bulkPasteController
         self.userDefaults = userDefaults
         self.onRestored = onRestored
+        pastesAsPlainText = userDefaults.bool(
+            forKey: DefaultsKey.pastesAsPlainText
+        )
         separatorOption = BulkSeparatorOption(
             rawValue: userDefaults.string(forKey: DefaultsKey.separatorOption) ?? ""
         ) ?? .newline
@@ -192,6 +203,7 @@ final class HistoryViewModel: ObservableObject {
         guard restoreTask == nil else {
             return
         }
+        let asPlainText = pastesAsPlainText
         isRestoring = true
         restoreTask = Task { [weak self, restorer] in
             guard let self else {
@@ -202,7 +214,10 @@ final class HistoryViewModel: ObservableObject {
                 restoreTask = nil
             }
             do {
-                try await restorer.restore(clip)
+                try await restorer.restore(
+                    clip,
+                    asPlainText: asPlainText
+                )
                 onRestored()
             } catch {
                 errorMessage = error.localizedDescription
@@ -235,6 +250,7 @@ final class HistoryViewModel: ObservableObject {
     }
 
     private enum DefaultsKey {
+        static let pastesAsPlainText = "paste.pastesAsPlainText"
         static let separatorOption = "bulkPaste.separatorOption"
         static let customSeparator = "bulkPaste.customSeparator"
     }
