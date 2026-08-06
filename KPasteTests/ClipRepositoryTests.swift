@@ -27,6 +27,50 @@ final class ClipRepositoryTests: XCTestCase {
         }
     }
 
+    func testUnpinBumpsClipToTopOfHistory() throws {
+        try withRepository { repository, _ in
+            let recentHistory = try repository.insert(makeClip("Recent", at: 1_000))
+            let oldPinned = try repository.insert(
+                makeClip("Old pinned", at: 100, pinned: true)
+            )
+            let oldPinnedID = try XCTUnwrap(oldPinned.id)
+            let bumpDate = Date(timeIntervalSince1970: 2_000)
+
+            XCTAssertTrue(
+                try repository.setPinned(
+                    false,
+                    for: oldPinnedID,
+                    bumpingToTop: true,
+                    at: bumpDate
+                )
+            )
+
+            XCTAssertEqual(try repository.fetchPinned(), [])
+            XCTAssertEqual(
+                try repository.fetchHistory().map(\.id),
+                [oldPinned.id, recentHistory.id]
+            )
+            XCTAssertEqual(
+                try XCTUnwrap(repository.fetch(id: oldPinnedID)).createdAt,
+                bumpDate
+            )
+        }
+    }
+
+    func testPinningDoesNotChangeCreatedAt() throws {
+        try withRepository { repository, _ in
+            let clip = try repository.insert(makeClip("Clip", at: 100))
+            let id = try XCTUnwrap(clip.id)
+
+            XCTAssertTrue(try repository.setPinned(true, for: id))
+
+            XCTAssertEqual(
+                try XCTUnwrap(repository.fetch(id: id)).createdAt,
+                clip.createdAt
+            )
+        }
+    }
+
     func testPinnedAndHistoryListsAreSortedNewestFirst() throws {
         try withRepository { repository, _ in
             let oldHistory = try repository.insert(makeClip("Old history", at: 100))

@@ -78,12 +78,25 @@ final class ClipRepository: Sendable {
         }
     }
 
+    /// - Parameter bumpingToTop: also refreshes `createdAt` so an unpinned clip
+    ///   reappears as the newest entry of the regular history. Both columns are
+    ///   written in one transaction, otherwise the history observation fires
+    ///   twice and the list visibly jumps.
     @discardableResult
-    func setPinned(_ pinned: Bool, for id: Int64) throws -> Bool {
+    func setPinned(
+        _ pinned: Bool,
+        for id: Int64,
+        bumpingToTop: Bool = false,
+        at date: Date = Date()
+    ) throws -> Bool {
         try databasePool.write { database in
-            try ClipRecord
+            var assignments = [ClipRecord.Columns.pinned.set(to: pinned)]
+            if bumpingToTop {
+                assignments.append(ClipRecord.Columns.createdAt.set(to: date))
+            }
+            return try ClipRecord
                 .filter(key: id)
-                .updateAll(database, ClipRecord.Columns.pinned.set(to: pinned)) > 0
+                .updateAll(database, assignments) > 0
         }
     }
 

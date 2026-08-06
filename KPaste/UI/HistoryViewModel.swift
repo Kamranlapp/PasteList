@@ -25,7 +25,8 @@ actor ClipHistoryActions {
         guard let id = clip.id else {
             return
         }
-        _ = try repository.setPinned(pinned, for: id)
+        // Unpinning moves the clip back to the top of the regular history.
+        _ = try repository.setPinned(pinned, for: id, bumpingToTop: !pinned)
     }
 
     func delete(_ clip: ClipRecord) throws {
@@ -105,7 +106,9 @@ final class HistoryViewModel: ObservableObject {
     private let actions: ClipHistoryActions
     private let restorer: ClipRestorer
     private let bulkPasteController: BulkPasteController
-    private let onRestored: () -> Void
+    /// Assigned after init by `StatusItemController`, which needs a reference to
+    /// the view model to build the callback in the first place.
+    var onRestored: () -> Void
     private let userDefaults: UserDefaults
     private var selectedClips: [Int64: ClipRecord] = [:]
     private var observation: AnyDatabaseCancellable?

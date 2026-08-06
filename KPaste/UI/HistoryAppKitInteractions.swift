@@ -1,72 +1,108 @@
 import AppKit
 import SwiftUI
 
+/// Turns a secondary click into a single action instead of a context menu.
+/// Overlaid on top of a row, it claims right-clicks and lets every other event
+/// fall through to the row underneath.
+struct RightClickActionView: NSViewRepresentable {
+    let action: () -> Void
+
+    func makeNSView(context: Context) -> RightClickActionNSView {
+        RightClickActionNSView(action: action)
+    }
+
+    func updateNSView(_ nsView: RightClickActionNSView, context: Context) {
+        nsView.action = action
+    }
+}
+
+final class RightClickActionNSView: NSView {
+    var action: () -> Void
+
+    init(action: @escaping () -> Void) {
+        self.action = action
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        isSecondaryClick(NSApp.currentEvent) ? super.hitTest(point) : nil
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        action()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        // Reached only for control-click, which macOS delivers as a left click.
+        action()
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        nil
+    }
+
+    private func isSecondaryClick(_ event: NSEvent?) -> Bool {
+        guard let event else {
+            return false
+        }
+        switch event.type {
+        case .rightMouseDown, .rightMouseUp, .rightMouseDragged:
+            return true
+        case .leftMouseDown, .leftMouseUp:
+            return event.modifierFlags.contains(.control)
+        default:
+            return false
+        }
+    }
+}
+
 struct TextSelectionSourceView: NSViewRepresentable {
     let clip: ClipRecord
-    let isSelected: Bool
     let onActivate: () -> Void
     let onSelectionChanged: ([ClipRecord]) -> Void
     let onSelectionFinished: () -> Void
-    let onToggleSelection: () -> Void
-    let onTogglePinned: () -> Void
-    let onDelete: () -> Void
 
     func makeNSView(context: Context) -> TextSelectionSourceNSView {
         TextSelectionSourceNSView(
             clip: clip,
-            isSelected: isSelected,
             onActivate: onActivate,
             onSelectionChanged: onSelectionChanged,
-            onSelectionFinished: onSelectionFinished,
-            onToggleSelection: onToggleSelection,
-            onTogglePinned: onTogglePinned,
-            onDelete: onDelete
+            onSelectionFinished: onSelectionFinished
         )
     }
 
     func updateNSView(_ nsView: TextSelectionSourceNSView, context: Context) {
         nsView.clip = clip
-        nsView.isSelected = isSelected
         nsView.onActivate = onActivate
         nsView.onSelectionChanged = onSelectionChanged
         nsView.onSelectionFinished = onSelectionFinished
-        nsView.onToggleSelection = onToggleSelection
-        nsView.onTogglePinned = onTogglePinned
-        nsView.onDelete = onDelete
     }
 }
 
 final class TextSelectionSourceNSView: NSView {
     var clip: ClipRecord
-    var isSelected: Bool
     var onActivate: () -> Void
     var onSelectionChanged: ([ClipRecord]) -> Void
     var onSelectionFinished: () -> Void
-    var onToggleSelection: () -> Void
-    var onTogglePinned: () -> Void
-    var onDelete: () -> Void
 
     private var mouseDownLocationInWindow: NSPoint?
     private var startedSelecting = false
 
     init(
         clip: ClipRecord,
-        isSelected: Bool,
         onActivate: @escaping () -> Void,
         onSelectionChanged: @escaping ([ClipRecord]) -> Void,
-        onSelectionFinished: @escaping () -> Void,
-        onToggleSelection: @escaping () -> Void,
-        onTogglePinned: @escaping () -> Void,
-        onDelete: @escaping () -> Void
+        onSelectionFinished: @escaping () -> Void
     ) {
         self.clip = clip
-        self.isSelected = isSelected
         self.onActivate = onActivate
         self.onSelectionChanged = onSelectionChanged
         self.onSelectionFinished = onSelectionFinished
-        self.onToggleSelection = onToggleSelection
-        self.onTogglePinned = onTogglePinned
-        self.onDelete = onDelete
         super.init(frame: .zero)
         toolTip = "Drag across text clips to select"
     }
@@ -111,47 +147,6 @@ final class TextSelectionSourceNSView: NSView {
         }
     }
 
-    override func menu(for event: NSEvent) -> NSMenu? {
-        let menu = NSMenu()
-
-        let selectionItem = NSMenuItem(
-            title: isSelected ? "Remove from bulk paste" : "Add to bulk paste",
-            action: #selector(toggleSelection),
-            keyEquivalent: ""
-        )
-        selectionItem.target = self
-        menu.addItem(selectionItem)
-
-        let pinItem = NSMenuItem(
-            title: clip.pinned ? "Unpin" : "Pin",
-            action: #selector(togglePinned),
-            keyEquivalent: ""
-        )
-        pinItem.target = self
-        menu.addItem(pinItem)
-
-        let deleteItem = NSMenuItem(
-            title: "Delete",
-            action: #selector(deleteClip),
-            keyEquivalent: ""
-        )
-        deleteItem.target = self
-        menu.addItem(deleteItem)
-        return menu
-    }
-
-    @objc private func toggleSelection() {
-        onToggleSelection()
-    }
-
-    @objc private func togglePinned() {
-        onTogglePinned()
-    }
-
-    @objc private func deleteClip() {
-        onDelete()
-    }
-
     private func textClips(between startY: CGFloat, and currentY: CGFloat) -> [ClipRecord] {
         guard let contentView = window?.contentView else {
             return [clip]
@@ -190,51 +185,27 @@ final class TextSelectionSourceNSView: NSView {
 
 struct FileDragSourceView: NSViewRepresentable {
     let urls: [URL]
-    let isPinned: Bool
     let onActivate: () -> Void
-    let onTogglePinned: () -> Void
-    let onDelete: () -> Void
 
     func makeNSView(context: Context) -> FileDragSourceNSView {
-        FileDragSourceNSView(
-            urls: urls,
-            isPinned: isPinned,
-            onActivate: onActivate,
-            onTogglePinned: onTogglePinned,
-            onDelete: onDelete
-        )
+        FileDragSourceNSView(urls: urls, onActivate: onActivate)
     }
 
     func updateNSView(_ nsView: FileDragSourceNSView, context: Context) {
         nsView.urls = urls
-        nsView.isPinned = isPinned
         nsView.onActivate = onActivate
-        nsView.onTogglePinned = onTogglePinned
-        nsView.onDelete = onDelete
     }
 }
 
 final class FileDragSourceNSView: NSView, NSDraggingSource {
     var urls: [URL]
-    var isPinned: Bool
     var onActivate: () -> Void
-    var onTogglePinned: () -> Void
-    var onDelete: () -> Void
     private var mouseDownLocation: NSPoint?
     private var startedDragging = false
 
-    init(
-        urls: [URL],
-        isPinned: Bool,
-        onActivate: @escaping () -> Void,
-        onTogglePinned: @escaping () -> Void,
-        onDelete: @escaping () -> Void
-    ) {
+    init(urls: [URL], onActivate: @escaping () -> Void) {
         self.urls = urls
-        self.isPinned = isPinned
         self.onActivate = onActivate
-        self.onTogglePinned = onTogglePinned
-        self.onDelete = onDelete
         super.init(frame: .zero)
         toolTip = "Drag to another app"
     }
@@ -300,35 +271,6 @@ final class FileDragSourceNSView: NSView, NSDraggingSource {
         if shouldActivate {
             onActivate()
         }
-    }
-
-    override func menu(for event: NSEvent) -> NSMenu? {
-        let menu = NSMenu()
-
-        let pinItem = NSMenuItem(
-            title: isPinned ? "Unpin" : "Pin",
-            action: #selector(togglePinned),
-            keyEquivalent: ""
-        )
-        pinItem.target = self
-        menu.addItem(pinItem)
-
-        let deleteItem = NSMenuItem(
-            title: "Delete",
-            action: #selector(deleteClip),
-            keyEquivalent: ""
-        )
-        deleteItem.target = self
-        menu.addItem(deleteItem)
-        return menu
-    }
-
-    @objc private func togglePinned() {
-        onTogglePinned()
-    }
-
-    @objc private func deleteClip() {
-        onDelete()
     }
 
     func draggingSession(

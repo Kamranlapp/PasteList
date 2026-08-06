@@ -169,6 +169,201 @@ final class KPasteTests: XCTestCase {
         XCTAssertEqual(resizedFrame.maxY, initialFrame.maxY)
     }
 
+    @MainActor
+    func testCursorPanelSurfaceFrameExcludesRailScrollBarAndControlStrip() {
+        let panelFrame = NSRect(
+            x: 400,
+            y: 300,
+            width: StatusItemController.cursorPanelSize.width,
+            height: StatusItemController.cursorPanelSize.height
+        )
+
+        let surfaceFrame = StatusItemController.cursorPanelSurfaceFrame(in: panelFrame)
+
+        XCTAssertEqual(
+            surfaceFrame.size,
+            StatusItemController.cursorPanelSurfaceSize
+        )
+        XCTAssertEqual(surfaceFrame.minX, panelFrame.minX + 16)
+        XCTAssertEqual(surfaceFrame.maxX, panelFrame.maxX - 121)
+        XCTAssertEqual(surfaceFrame.minY, panelFrame.minY)
+        XCTAssertEqual(surfaceFrame.maxY, panelFrame.maxY - 50)
+    }
+
+    func testImagePreviewIsPlacedRightOfTheSurfaceSharingItsTopEdge() {
+        let surfaceFrame = NSRect(x: 416, y: 300, width: 334, height: 416)
+
+        let previewFrame = ImagePreviewPlacement.frame(
+            previewSize: NSSize(width: 300, height: 200),
+            anchorFrame: surfaceFrame,
+            visibleFrame: NSRect(x: 0, y: 0, width: 1800, height: 1000),
+            gap: 16
+        )
+
+        XCTAssertEqual(previewFrame.minX, surfaceFrame.maxX + 16)
+        XCTAssertEqual(previewFrame.maxY, surfaceFrame.maxY)
+        XCTAssertEqual(previewFrame, NSRect(x: 766, y: 516, width: 300, height: 200))
+    }
+
+    func testImagePreviewFlipsToTheLeftNearTheRightScreenEdge() {
+        let surfaceFrame = NSRect(x: 1016, y: 300, width: 334, height: 416)
+
+        let previewFrame = ImagePreviewPlacement.frame(
+            previewSize: NSSize(width: 300, height: 200),
+            anchorFrame: surfaceFrame,
+            visibleFrame: NSRect(x: 0, y: 0, width: 1500, height: 1000),
+            gap: 16
+        )
+
+        XCTAssertEqual(previewFrame.maxX, surfaceFrame.minX - 16)
+        XCTAssertEqual(previewFrame.minX, 700)
+    }
+
+    func testImagePreviewStaysInsideVisibleFrame() {
+        let visibleFrame = NSRect(x: 0, y: 0, width: 1800, height: 1000)
+
+        let topFrame = ImagePreviewPlacement.frame(
+            previewSize: NSSize(width: 300, height: 400),
+            anchorFrame: NSRect(x: 416, y: 700, width: 334, height: 416),
+            visibleFrame: visibleFrame,
+            gap: 16
+        )
+        XCTAssertEqual(topFrame.maxY, visibleFrame.maxY)
+
+        let bottomFrame = ImagePreviewPlacement.frame(
+            previewSize: NSSize(width: 300, height: 400),
+            anchorFrame: NSRect(x: 416, y: 0, width: 334, height: 300),
+            visibleFrame: visibleFrame,
+            gap: 16
+        )
+        XCTAssertEqual(bottomFrame.minY, visibleFrame.minY)
+    }
+
+    func testImagePreviewDisplaySizeFitsMaximumAndPreservesAspectRatio() {
+        let displaySize = ImagePreviewPlacement.displaySize(
+            pixelSize: NSSize(width: 1680, height: 945),
+            scale: 2,
+            maximum: NSSize(width: 420, height: 420),
+            minimumLongSide: 120
+        )
+
+        XCTAssertEqual(displaySize.width, 420)
+        XCTAssertEqual(displaySize.height, 236)
+    }
+
+    func testImagePreviewDisplaySizeIsScaleIndependent() {
+        let retinaSize = ImagePreviewPlacement.displaySize(
+            pixelSize: NSSize(width: 1680, height: 945),
+            scale: 2,
+            maximum: NSSize(width: 420, height: 420),
+            minimumLongSide: 120
+        )
+        let nonRetinaSize = ImagePreviewPlacement.displaySize(
+            pixelSize: NSSize(width: 1680, height: 945),
+            scale: 1,
+            maximum: NSSize(width: 420, height: 420),
+            minimumLongSide: 120
+        )
+
+        XCTAssertEqual(retinaSize, nonRetinaSize)
+    }
+
+    func testImagePreviewDisplaySizeEnlargesTinyImages() {
+        let displaySize = ImagePreviewPlacement.displaySize(
+            pixelSize: NSSize(width: 32, height: 16),
+            scale: 2,
+            maximum: NSSize(width: 420, height: 420),
+            minimumLongSide: 120
+        )
+
+        XCTAssertEqual(displaySize.width, 120)
+        XCTAssertEqual(displaySize.height, 60)
+    }
+
+    func testSavedPanelIsHalfHeightAndSharesTopEdgeWithHistoryPanel() {
+        let surfaceFrame = NSRect(x: 416, y: 300, width: 334, height: 416)
+
+        let savedFrame = SavedClipsPlacement.frame(
+            panelSurfaceFrame: surfaceFrame,
+            visibleFrame: NSRect(x: 0, y: 0, width: 1800, height: 1000),
+            gap: 16
+        )
+
+        XCTAssertEqual(savedFrame.width, surfaceFrame.width)
+        XCTAssertEqual(savedFrame.height, surfaceFrame.height / 2)
+        XCTAssertEqual(savedFrame.minX, surfaceFrame.maxX + 16)
+        XCTAssertEqual(savedFrame.maxY, surfaceFrame.maxY)
+    }
+
+    func testSavedPanelFlipsToTheLeftNearTheRightScreenEdge() {
+        let surfaceFrame = NSRect(x: 1000, y: 300, width: 334, height: 416)
+
+        let savedFrame = SavedClipsPlacement.frame(
+            panelSurfaceFrame: surfaceFrame,
+            visibleFrame: NSRect(x: 0, y: 0, width: 1500, height: 1000),
+            gap: 16
+        )
+
+        XCTAssertEqual(savedFrame.maxX, surfaceFrame.minX - 16)
+    }
+
+    func testSavedPanelStaysInsideVisibleFrame() {
+        let visibleFrame = NSRect(x: 0, y: 0, width: 1800, height: 1000)
+
+        let savedFrame = SavedClipsPlacement.frame(
+            panelSurfaceFrame: NSRect(x: 416, y: 800, width: 334, height: 600),
+            visibleFrame: visibleFrame,
+            gap: 16
+        )
+
+        XCTAssertLessThanOrEqual(savedFrame.maxY, visibleFrame.maxY)
+        XCTAssertGreaterThanOrEqual(savedFrame.minY, visibleFrame.minY)
+    }
+
+    func testImagePreviewShiftsRightOfTheSavedPanelWhenItIsVisible() {
+        let surfaceFrame = NSRect(x: 416, y: 300, width: 334, height: 416)
+        let visibleFrame = NSRect(x: 0, y: 0, width: 1800, height: 1000)
+        let savedFrame = SavedClipsPlacement.frame(
+            panelSurfaceFrame: surfaceFrame,
+            visibleFrame: visibleFrame,
+            gap: 16
+        )
+
+        let withoutSaved = ImagePreviewPlacement.frame(
+            previewSize: NSSize(width: 300, height: 200),
+            anchorFrame: surfaceFrame,
+            visibleFrame: visibleFrame,
+            gap: 16
+        )
+        let withSaved = ImagePreviewPlacement.frame(
+            previewSize: NSSize(width: 300, height: 200),
+            anchorFrame: surfaceFrame.union(savedFrame),
+            visibleFrame: visibleFrame,
+            gap: 16
+        )
+
+        XCTAssertEqual(withSaved.minX, savedFrame.maxX + 16)
+        XCTAssertGreaterThan(withSaved.minX, withoutSaved.minX)
+        // The union keeps the taller history panel's top, so the preview stays
+        // on the same line either way.
+        XCTAssertEqual(withSaved.maxY, withoutSaved.maxY)
+    }
+
+    @MainActor
+    func testSavedPanelVisibilityIsSavedAndRestored() throws {
+        let suiteName = "KPasteTests.savedPanelVisible.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        XCTAssertFalse(SavedClipsPanelController.storedVisibility(in: defaults))
+
+        SavedClipsPanelController.saveVisibility(true, in: defaults)
+        XCTAssertTrue(SavedClipsPanelController.storedVisibility(in: defaults))
+
+        SavedClipsPanelController.saveVisibility(false, in: defaults)
+        XCTAssertFalse(SavedClipsPanelController.storedVisibility(in: defaults))
+    }
+
     func testClipTimestampUsesTodayYesterdayAndWeekdayFormats() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))

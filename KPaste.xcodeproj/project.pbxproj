@@ -44,6 +44,9 @@
 		100000000000000000000036 /* HistoryRowComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000036 /* HistoryRowComponents.swift */; };
 		100000000000000000000037 /* HistorySelectionSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000037 /* HistorySelectionSupport.swift */; };
 		100000000000000000000038 /* HistoryViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000038 /* HistoryViewModelTests.swift */; };
+		100000000000000000000039 /* ImagePreviewPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000039 /* ImagePreviewPanelController.swift */; };
+		10000000000000000000003A /* SavedClipsPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000003A /* SavedClipsPanelController.swift */; };
+		10000000000000000000003B /* SavedClipsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000003B /* SavedClipsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -95,6 +98,9 @@
 		200000000000000000000036 /* HistoryRowComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryRowComponents.swift; sourceTree = "<group>"; };
 		200000000000000000000037 /* HistorySelectionSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistorySelectionSupport.swift; sourceTree = "<group>"; };
 		200000000000000000000038 /* HistoryViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryViewModelTests.swift; sourceTree = "<group>"; };
+		200000000000000000000039 /* ImagePreviewPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePreviewPanelController.swift; sourceTree = "<group>"; };
+		20000000000000000000003A /* SavedClipsPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedClipsPanelController.swift; sourceTree = "<group>"; };
+		20000000000000000000003B /* SavedClipsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedClipsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -217,9 +223,12 @@
 				200000000000000000000037 /* HistorySelectionSupport.swift */,
 				200000000000000000000019 /* HistoryView.swift */,
 				200000000000000000000020 /* HistoryViewModel.swift */,
+				200000000000000000000039 /* ImagePreviewPanelController.swift */,
 				200000000000000000000021 /* ImageThumbnailCache.swift */,
 				200000000000000000000026 /* PreferencesView.swift */,
 				200000000000000000000028 /* PreferencesWindowController.swift */,
+				20000000000000000000003A /* SavedClipsPanelController.swift */,
+				20000000000000000000003B /* SavedClipsView.swift */,
 				200000000000000000000018 /* StatusItemController.swift */,
 			);
 			path = UI;
@@ -356,9 +365,12 @@
 				100000000000000000000036 /* HistoryRowComponents.swift in Sources */,
 				100000000000000000000037 /* HistorySelectionSupport.swift in Sources */,
 				100000000000000000000020 /* HistoryViewModel.swift in Sources */,
+				100000000000000000000039 /* ImagePreviewPanelController.swift in Sources */,
 				100000000000000000000021 /* ImageThumbnailCache.swift in Sources */,
 				100000000000000000000026 /* PreferencesView.swift in Sources */,
 				100000000000000000000028 /* PreferencesWindowController.swift in Sources */,
+				10000000000000000000003A /* SavedClipsPanelController.swift in Sources */,
+				10000000000000000000003B /* SavedClipsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

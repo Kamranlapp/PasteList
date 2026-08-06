@@ -4,10 +4,12 @@ import SwiftUI
 struct CursorPanelControls: View {
     @Binding var isPinned: Bool
     @Binding var isResizeModeEnabled: Bool
+    @Binding var isSavedPanelVisible: Bool
     @Binding var pastesAsPlainText: Bool
     @Binding var filter: ClipHistoryFilter
     let pinChanged: (Bool) -> Void
     let resizeModeChanged: (Bool) -> Void
+    let savedPanelVisibilityChanged: (Bool) -> Void
     let clearHistory: () -> Void
     let filterMenuPresentationChanged: (Bool) -> Void
     let clearConfirmationChanged: (Bool) -> Void
@@ -20,6 +22,7 @@ struct CursorPanelControls: View {
         case pin = "Pin"
         case move = "Move"
         case resize = "Resize"
+        case saved = "Saved"
         case plainText = "Plain text"
         case filter = "Filter"
         case clear = "Clear"
@@ -72,6 +75,21 @@ struct CursorPanelControls: View {
                 .onHover { setHoveredControl(.resize, isInside: $0) }
 
                 Button {
+                    isSavedPanelVisible.toggle()
+                    savedPanelVisibilityChanged(isSavedPanelVisible)
+                } label: {
+                    controlCircle(
+                        systemName: isSavedPanelVisible
+                            ? "square.and.arrow.down.fill"
+                            : "square.and.arrow.down",
+                        isActive: isSavedPanelVisible
+                    )
+                }
+                .buttonStyle(.plain)
+                .overlay(alignment: .top) { tooltip(for: .saved) }
+                .onHover { setHoveredControl(.saved, isInside: $0) }
+
+                Button {
                     pastesAsPlainText.toggle()
                 } label: {
                     controlCircle(
@@ -120,7 +138,7 @@ struct CursorPanelControls: View {
             .opacity(isHovering || isFilterMenuPresented || showsClearConfirmation ? 1 : 0)
             .allowsHitTesting(isHovering || isFilterMenuPresented || showsClearConfirmation)
         }
-        .frame(width: 218, height: 92, alignment: .topLeading)
+        .frame(width: 250, height: 92, alignment: .topLeading)
         .alert("Clear Clipboard History?", isPresented: clearConfirmationBinding) {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive, action: clearHistory)

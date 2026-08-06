@@ -44,6 +44,10 @@ final class StatusItemController: NSObject {
     private let statusItem: NSStatusItem
     private let actionsPopover: NSPopover
     private let cursorPanel: CursorHistoryPanel
+    private let imagePreviewPanel: ImagePreviewPanelController
+    private let savedClipsPanel: SavedClipsPanelController
+    private let historyViewModel: HistoryViewModel
+    private let thumbnailCache: ImageThumbnailCache
     private let selectionResetController: HistorySelectionResetController
     private let accessibilityController: AccessibilityController
     private let onOpenSettings: () -> Void
@@ -73,16 +77,37 @@ final class StatusItemController: NSObject {
             backing: .buffered,
             defer: false
         )
+        imagePreviewPanel = ImagePreviewPanelController(blobStorage: blobStorage)
+        savedClipsPanel = SavedClipsPanelController()
+        thumbnailCache = ImageThumbnailCache(blobStorage: blobStorage)
+        // One view model backs both the history panel and the Saved panel, so a
+        // single database observation keeps the two windows in step.
+        let historyViewModel = HistoryViewModel(
+            repository: repository,
+            blobStorage: blobStorage,
+            restorer: ClipRestorer(
+                repository: repository,
+                blobStorage: blobStorage,
+                monitor: pasteboardMonitor
+            ),
+            bulkPasteController: BulkPasteController(
+                repository: repository,
+                blobStorage: blobStorage,
+                monitor: pasteboardMonitor
+            ),
+            onRestored: {}
+        )
+        self.historyViewModel = historyViewModel
         self.accessibilityController = accessibilityController
         self.onOpenSettings = onOpenSettings
         super.init()
 
+        historyViewModel.onRestored = { [weak self] in
+            self?.didRestoreClip()
+        }
         configureStatusItem()
-        configureCursorPanel(
-            repository: repository,
-            blobStorage: blobStorage,
-            pasteboardMonitor: pasteboardMonitor
-        )
+        configureCursorPanel(blobStorage: blobStorage)
+        configureSavedClipsPanel(blobStorage: blobStorage)
         configureActionsPopover()
     }
 
@@ -125,11 +150,7 @@ final class StatusItemController: NSObject {
         )
     }
 
-    private func configureCursorPanel(
-        repository: ClipRepository,
-        blobStorage: BlobStorage,
-        pasteboardMonitor: PasteboardMonitor
-    ) {
+    private func configureCursorPanel(blobStorage: BlobStorage) {
         cursorPanel.isReleasedWhenClosed = false
         cursorPanel.isFloatingPanel = true
         cursorPanel.level = .popUpMenu
@@ -147,24 +168,13 @@ final class StatusItemController: NSObject {
         cursorPanel.cancelResizeMode = { [weak self] in
             self?.finishCursorPanelResizeMode()
         }
-        cursorPanel.contentViewController = NSHostingController(
+        let hostingController = NSHostingController(
             rootView: HistoryView(
-                repository: repository,
+                viewModel: historyViewModel,
                 blobStorage: blobStorage,
-                restorer: ClipRestorer(
-                    repository: repository,
-                    blobStorage: blobStorage,
-                    monitor: pasteboardMonitor
-                ),
-                bulkPasteController: BulkPasteController(
-                    repository: repository,
-                    blobStorage: blobStorage,
-                    monitor: pasteboardMonitor
-                ),
-                onRestored: { [weak self] in
-                    self?.didRestoreClip()
-                },
+                thumbnailCache: thumbnailCache,
                 usesTransparentBackground: true,
+                isSavedPanelVisible: savedClipsPanel.isEnabled,
                 onCursorPanelPinChanged: { [weak self] isPinned in
                     self?.setCursorPanelPinned(isPinned)
                 },
@@ -177,9 +187,37 @@ final class StatusItemController: NSObject {
                 onCursorPanelClearConfirmationChanged: { [weak self] isPresented in
                     self?.isCursorPanelClearConfirmationPresented = isPresented
                 },
+                onSavedPanelVisibilityChanged: { [weak self] isVisible in
+                    self?.setSavedPanelVisible(isVisible)
+                },
+                onImagePreviewChanged: { [weak self] clipID in
+                    self?.setImagePreview(clipID: clipID)
+                },
                 selectionResetController: selectionResetController
             )
         )
+        // The hosting controller would otherwise push its own fitting size onto
+        // the panel and discard the size restored from user defaults.
+        hostingController.sizingOptions = []
+        cursorPanel.contentViewController = hostingController
+        cursorPanel.setContentSize(Self.storedCursorPanelSize())
+    }
+
+    private func configureSavedClipsPanel(blobStorage: BlobStorage) {
+        savedClipsPanel.configure(
+            rootView: SavedClipsView(
+                viewModel: historyViewModel,
+                blobStorage: blobStorage,
+                thumbnailCache: thumbnailCache,
+                onImagePreviewChanged: { [weak self] clipID in
+                    self?.setImagePreview(clipID: clipID)
+                }
+            )
+        )
+    }
+
+    private func setSavedPanelVisible(_ isVisible: Bool) {
+        savedClipsPanel.setEnabled(isVisible, relativeTo: cursorPanel)
     }
 
     func toggleCursorPanelAtPointer() {
@@ -219,6 +257,7 @@ final class StatusItemController: NSObject {
             )
             cursorPanel.animator().alphaValue = 1
         }
+        savedClipsPanel.show(relativeTo: cursorPanel)
     }
 
     static func cursorPanelFrame(
@@ -262,6 +301,21 @@ final class StatusItemController: NSObject {
             y: min(max(desiredOrigin.y, availableFrame.minY), maximumY)
         )
         return NSRect(origin: origin, size: size)
+    }
+
+    /// The rounded surface the user actually sees, inset from the panel frame by
+    /// the tick scroll bar on the left, the hidden bulk-paste rail on the right
+    /// and the transparent window-control strip on top.
+    static func cursorPanelSurfaceFrame(in panelFrame: NSRect) -> NSRect {
+        let leadingInset = cursorScrollBarWidth + cursorScrollBarSpacing
+        let trailingInset = cursorBulkPasteRailSpacing + cursorBulkPasteRailWidth
+        let topInset = cursorWindowControlAreaHeight + cursorWindowControlSpacing
+        return NSRect(
+            x: panelFrame.minX + leadingInset,
+            y: panelFrame.minY,
+            width: max(panelFrame.width - leadingInset - trailingInset, 0),
+            height: max(panelFrame.height - topInset, 0)
+        )
     }
 
     static func storedCursorPanelSize(
@@ -389,12 +443,27 @@ final class StatusItemController: NSObject {
             : [.transient, .moveToActiveSpace, .fullScreenAuxiliary]
     }
 
+    private func setImagePreview(clipID: Int64?) {
+        guard let clipID, cursorPanel.isVisible, !isCursorPanelFadingOut else {
+            imagePreviewPanel.hide()
+            return
+        }
+        imagePreviewPanel.show(
+            clipID: clipID,
+            relativeTo: cursorPanel,
+            anchorFrame: savedClipsPanel.anchorFrame(
+                surfaceFrame: Self.cursorPanelSurfaceFrame(in: cursorPanel.frame)
+            )
+        )
+    }
+
     private func setCursorPanelResizeMode(_ isEnabled: Bool) {
         guard isCursorPanelResizeModeEnabled != isEnabled else {
             return
         }
         isCursorPanelResizeModeEnabled = isEnabled
         if isEnabled {
+            imagePreviewPanel.hide()
             installResizeExitMonitors()
         } else {
             removeResizeExitMonitors()
@@ -474,6 +543,8 @@ final class StatusItemController: NSObject {
         guard force || !isCursorPanelPinned else {
             return
         }
+        imagePreviewPanel.hide()
+        savedClipsPanel.hide()
         setCursorPanelResizeMode(false)
         guard cursorPanel.isVisible else {
             return
@@ -508,6 +579,14 @@ final class StatusItemController: NSObject {
 }
 
 extension StatusItemController: NSWindowDelegate {
+    func windowDidResize(_ notification: Notification) {
+        guard notification.object as? NSWindow === cursorPanel else {
+            return
+        }
+        // Child windows follow a move on their own, but not a resize.
+        savedClipsPanel.layout(relativeTo: cursorPanel)
+    }
+
     func windowDidResignKey(_ notification: Notification) {
         guard notification.object as? NSWindow === cursorPanel else {
             return

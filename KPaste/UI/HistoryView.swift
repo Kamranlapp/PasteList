@@ -2,12 +2,13 @@ import AppKit
 import SwiftUI
 
 struct HistoryView: View {
-    @StateObject private var viewModel: HistoryViewModel
+    @ObservedObject private var viewModel: HistoryViewModel
     @State private var rowFrames: [Int64: CGRect] = [:]
     @State private var suppressRowActivation = false
     @State private var showsBulkPastePanel = false
     @State private var isCursorPanelPinned = false
     @State private var isCursorPanelResizeModeEnabled = false
+    @State private var isSavedPanelVisible: Bool
     @State private var hoveredClipID: Int64?
     @ObservedObject private var selectionResetController: HistorySelectionResetController
     private let blobStorage: BlobStorage
@@ -17,38 +18,37 @@ struct HistoryView: View {
     private let onCursorPanelResizeModeChanged: (Bool) -> Void
     private let onCursorPanelFilterMenuPresentationChanged: (Bool) -> Void
     private let onCursorPanelClearConfirmationChanged: (Bool) -> Void
+    private let onSavedPanelVisibilityChanged: (Bool) -> Void
+    private let onImagePreviewChanged: (Int64?) -> Void
     private static let listCoordinateSpace = "KPasteHistoryList"
+    private static let imagePreviewHoverDelay = Duration.milliseconds(500)
 
     init(
-        repository: ClipRepository,
+        viewModel: HistoryViewModel,
         blobStorage: BlobStorage,
-        restorer: ClipRestorer,
-        bulkPasteController: BulkPasteController,
-        onRestored: @escaping () -> Void,
+        thumbnailCache: ImageThumbnailCache,
         usesTransparentBackground: Bool = false,
+        isSavedPanelVisible: Bool = false,
         onCursorPanelPinChanged: @escaping (Bool) -> Void = { _ in },
         onCursorPanelResizeModeChanged: @escaping (Bool) -> Void = { _ in },
         onCursorPanelFilterMenuPresentationChanged: @escaping (Bool) -> Void = { _ in },
         onCursorPanelClearConfirmationChanged: @escaping (Bool) -> Void = { _ in },
+        onSavedPanelVisibilityChanged: @escaping (Bool) -> Void = { _ in },
+        onImagePreviewChanged: @escaping (Int64?) -> Void = { _ in },
         selectionResetController: HistorySelectionResetController
     ) {
+        self.viewModel = viewModel
         self.blobStorage = blobStorage
-        thumbnailCache = ImageThumbnailCache(blobStorage: blobStorage)
+        self.thumbnailCache = thumbnailCache
         self.usesTransparentBackground = usesTransparentBackground
+        _isSavedPanelVisible = State(initialValue: isSavedPanelVisible)
         self.onCursorPanelPinChanged = onCursorPanelPinChanged
         self.onCursorPanelResizeModeChanged = onCursorPanelResizeModeChanged
         self.onCursorPanelFilterMenuPresentationChanged = onCursorPanelFilterMenuPresentationChanged
         self.onCursorPanelClearConfirmationChanged = onCursorPanelClearConfirmationChanged
+        self.onSavedPanelVisibilityChanged = onSavedPanelVisibilityChanged
+        self.onImagePreviewChanged = onImagePreviewChanged
         self.selectionResetController = selectionResetController
-        _viewModel = StateObject(
-            wrappedValue: HistoryViewModel(
-                repository: repository,
-                blobStorage: blobStorage,
-                restorer: restorer,
-                bulkPasteController: bulkPasteController,
-                onRestored: onRestored
-            )
-        )
     }
 
     var body: some View {
@@ -119,10 +119,12 @@ struct HistoryView: View {
                     CursorPanelControls(
                         isPinned: $isCursorPanelPinned,
                         isResizeModeEnabled: $isCursorPanelResizeModeEnabled,
+                        isSavedPanelVisible: $isSavedPanelVisible,
                         pastesAsPlainText: $viewModel.pastesAsPlainText,
                         filter: $viewModel.filter,
                         pinChanged: onCursorPanelPinChanged,
                         resizeModeChanged: onCursorPanelResizeModeChanged,
+                        savedPanelVisibilityChanged: onSavedPanelVisibilityChanged,
                         clearHistory: viewModel.clearHistory,
                         filterMenuPresentationChanged: onCursorPanelFilterMenuPresentationChanged,
                         clearConfirmationChanged: onCursorPanelClearConfirmationChanged
@@ -172,6 +174,28 @@ struct HistoryView: View {
             .onChange(of: selectionResetController.token) { _ in
                 resetSelectionState()
             }
+            .task(id: hoveredClipID) {
+                await updateImagePreview()
+            }
+    }
+
+    /// Shows the hover preview only once the pointer has rested on an image row.
+    /// SwiftUI cancels and restarts this task whenever `hoveredClipID` changes,
+    /// so leaving a row hides the preview without any manual bookkeeping.
+    private func updateImagePreview() async {
+        guard
+            let clipID = hoveredClipID,
+            let clip = orderedClips.first(where: { $0.id == clipID }),
+            ClipContentType(rawValue: clip.type) == .image
+        else {
+            onImagePreviewChanged(nil)
+            return
+        }
+        try? await Task.sleep(for: Self.imagePreviewHoverDelay)
+        guard !Task.isCancelled else {
+            return
+        }
+        onImagePreviewChanged(clipID)
     }
 
     private var mainWindow: some View {
@@ -213,7 +237,7 @@ struct HistoryView: View {
                 systemImage: "exclamationmark.triangle",
                 description: errorMessage
             )
-        } else if viewModel.pinned.isEmpty && viewModel.history.isEmpty {
+        } else if viewModel.history.isEmpty {
             EmptyStateView(
                 title: viewModel.searchText.isEmpty ? "No Clips Yet" : "No Results",
                 systemImage: viewModel.searchText.isEmpty ? "clipboard" : "magnifyingglass",
@@ -228,17 +252,10 @@ struct HistoryView: View {
 
     private var historyList: some View {
         ScrollViewReader { scrollProxy in
+            // Saved clips live in their own panel, so the list only shows history.
             List {
-                if !viewModel.pinned.isEmpty {
-                    Section("Pinned") {
-                        rows(viewModel.pinned)
-                    }
-                }
-
-                if !viewModel.history.isEmpty {
-                    Section {
-                        rows(viewModel.history)
-                    }
+                Section {
+                    rows(viewModel.history)
                 }
             }
             .listStyle(.inset)
@@ -269,7 +286,7 @@ struct HistoryView: View {
             }
             .onChange(of: selectionResetController.token) { _ in
                 DispatchQueue.main.async {
-                    guard let topClipID = (viewModel.pinned.first ?? viewModel.history.first)?.id else {
+                    guard let topClipID = viewModel.history.first?.id else {
                         return
                     }
                     scrollProxy.scrollTo(topClipID, anchor: .top)
@@ -279,7 +296,7 @@ struct HistoryView: View {
     }
 
     private var orderedClips: [ClipRecord] {
-        viewModel.pinned + viewModel.history
+        viewModel.history
     }
 
     private var firstVisibleClipIndex: Int {
@@ -325,21 +342,10 @@ struct HistoryView: View {
                     }
                 }
             }
-            .contextMenu {
-                if viewModel.canBulkSelect(clip) {
-                    Button(
-                        viewModel.selectionIndex(for: clip) == nil
-                            ? "Add to bulk paste"
-                            : "Remove from bulk paste"
-                    ) {
-                        viewModel.toggleSelection(clip)
-                    }
-                }
-                Button(clip.pinned ? "Unpin" : "Pin") {
+            // Secondary click saves the clip outright — no menu step.
+            .overlay {
+                RightClickActionView {
                     viewModel.togglePinned(clip)
-                }
-                Button("Delete", role: .destructive) {
-                    viewModel.delete(clip)
                 }
             }
         }
@@ -357,13 +363,9 @@ struct HistoryView: View {
 
                 TextSelectionSourceView(
                     clip: clip,
-                    isSelected: clip.id.map(viewModel.selectedClipIDs.contains) == true,
                     onActivate: { viewModel.restore(clip) },
                     onSelectionChanged: handleTextSelection,
-                    onSelectionFinished: finishTextSelection,
-                    onToggleSelection: { viewModel.toggleSelection(clip) },
-                    onTogglePinned: { viewModel.togglePinned(clip) },
-                    onDelete: { viewModel.delete(clip) }
+                    onSelectionFinished: finishTextSelection
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -382,10 +384,7 @@ struct HistoryView: View {
 
                     FileDragSourceView(
                         urls: urls,
-                        isPinned: clip.pinned,
-                        onActivate: { viewModel.restore(clip) },
-                        onTogglePinned: { viewModel.togglePinned(clip) },
-                        onDelete: { viewModel.delete(clip) }
+                        onActivate: { viewModel.restore(clip) }
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -468,6 +467,7 @@ struct HistoryView: View {
         showsBulkPastePanel = false
         isCursorPanelResizeModeEnabled = false
         hoveredClipID = nil
+        onImagePreviewChanged(nil)
         viewModel.clearSelection()
     }
 }
