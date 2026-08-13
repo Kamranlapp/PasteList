@@ -3,37 +3,37 @@
 set -euo pipefail
 
 if [[ $# -lt 1 || $# -gt 2 ]]; then
-    echo "usage: $0 /path/to/Paster.app [/path/to/Paster-arm64.dmg]" >&2
+    echo "usage: $0 /path/to/PasteList.app [/path/to/PasteList-arm64.dmg]" >&2
     exit 64
 fi
 
 app_path="$1"
 project_root="$(cd "$(dirname "$0")/.." && pwd)"
-output_path="${2:-$project_root/dist/Paster-arm64.dmg}"
+output_path="${2:-$project_root/dist/PasteList-arm64.dmg}"
 
 if [[ ! -d "$app_path" ]]; then
-    echo "error: Paster.app was not found at $app_path" >&2
+    echo "error: PasteList.app was not found at $app_path" >&2
     exit 1
 fi
 
 bundle_identifier="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Contents/Info.plist")"
-if [[ "$bundle_identifier" != "com.kam.paster" ]]; then
+if [[ "$bundle_identifier" != "com.kam.pastelist" ]]; then
     echo "error: unexpected bundle identifier: $bundle_identifier" >&2
     exit 1
 fi
 
 icon_path="$app_path/Contents/Resources/AppIcon.icns"
 if [[ ! -f "$icon_path" ]]; then
-    echo "error: Paster.app does not contain AppIcon.icns" >&2
+    echo "error: PasteList.app does not contain AppIcon.icns" >&2
     exit 1
 fi
 
 set_file="$(xcrun --find SetFile)"
 de_rez="$(xcrun --find DeRez)"
 rez="$(xcrun --find Rez)"
-working_directory="$(mktemp -d /tmp/Paster-dmg.XXXXXX)"
-staging_directory="$working_directory/Paster"
-temporary_dmg="$working_directory/Paster-arm64.dmg"
+working_directory="$(mktemp -d /tmp/PasteList-dmg.XXXXXX)"
+staging_directory="$working_directory/PasteList"
+temporary_dmg="$working_directory/PasteList-arm64.dmg"
 icon_copy="$working_directory/AppIcon.icns"
 icon_resource="$working_directory/AppIcon.rsrc"
 
@@ -43,14 +43,14 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "$staging_directory"
-/usr/bin/ditto "$app_path" "$staging_directory/Paster.app"
+/usr/bin/ditto "$app_path" "$staging_directory/PasteList.app"
 ln -s /Applications "$staging_directory/Applications"
 /usr/bin/ditto "$icon_path" "$staging_directory/.VolumeIcon.icns"
 "$set_file" -a V "$staging_directory/.VolumeIcon.icns"
 "$set_file" -a C "$staging_directory"
 
 hdiutil create \
-    -volname Paster \
+    -volname PasteList \
     -srcfolder "$staging_directory" \
     -format UDZO \
     -imagekey zlib-level=9 \
@@ -67,4 +67,4 @@ sips -i "$icon_copy" >/dev/null
 mkdir -p "$(dirname "$output_path")"
 mv -f "$temporary_dmg" "$output_path"
 
-echo "Created $output_path with Paster file and volume icons."
+echo "Created $output_path with PasteList file and volume icons."

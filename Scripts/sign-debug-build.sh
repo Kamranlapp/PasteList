@@ -22,7 +22,7 @@ if [[ "${ENABLE_APP_SANDBOX:-NO}" == "YES" ]]; then
 fi
 
 # Re-sign only legacy, non-sandboxed Debug builds.
-identity="${PASTER_SIGNING_IDENTITY:-}"
+identity="${PASTELIST_SIGNING_IDENTITY:-}"
 if [[ -z "$identity" ]]; then
     identity="$({
         /usr/bin/security find-identity -v -p codesigning 2>/dev/null || true

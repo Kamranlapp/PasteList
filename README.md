@@ -1,6 +1,6 @@
-# Paster
+# PasteList
 
-Paster is a lightweight, privacy-focused clipboard manager for macOS. It runs
+PasteList is a lightweight, privacy-focused clipboard manager for macOS. It runs
 from the menu bar, keeps clipboard history entirely on your Mac, and provides
 fast access through a customizable global shortcut.
 
@@ -23,8 +23,8 @@ fast access through a customizable global shortcut.
 ## Build
 
 1. Clone the repository.
-2. Open `Paster.xcodeproj` in Xcode.
-3. Select the **Paster** scheme and run the project.
+2. Open `PasteList.xcodeproj` in Xcode.
+3. Select the **PasteList** scheme and run the project.
 
 Dependencies are resolved automatically through Swift Package Manager.
 
@@ -33,28 +33,28 @@ Dependencies are resolved automatically through Swift Package Manager.
 The shared Xcode scheme re-signs Debug builds with the first valid Apple
 Development identity in the login keychain. This gives the build a stable code
 requirement, so macOS keeps Accessibility access after recompilation. If more
-than one valid identity exists, set `PASTER_SIGNING_IDENTITY` to the desired
+than one valid identity exists, set `PASTELIST_SIGNING_IDENTITY` to the desired
 certificate name or SHA-1 hash.
 
 After switching from an older ad-hoc build, reset its stale permission once:
 
 ```sh
-tccutil reset Accessibility com.kam.paster
+tccutil reset Accessibility com.kam.pastelist
 ```
 
-Then run Paster from Xcode and grant it access in System Settings.
+Then run PasteList from Xcode and grant it access in System Settings.
 
 ## Launch at Login
 
-Paster uses `SMAppService.mainApp` on macOS 13 and later. Move the built app to
-a stable location such as `/Applications/Paster.app` before enabling Launch at
+PasteList uses `SMAppService.mainApp` on macOS 13 and later. Move the built app to
+a stable location such as `/Applications/PasteList.app` before enabling Launch at
 Login. Registration from Xcode's DerivedData folder may be unavailable or stop
 working when the build location changes.
 
 ## Testing
 
 ```sh
-xcodebuild test -project Paster.xcodeproj -scheme Paster -destination 'platform=macOS'
+xcodebuild test -project PasteList.xcodeproj -scheme PasteList -destination 'platform=macOS'
 ```
 
 ## Distribution
@@ -63,10 +63,10 @@ After building the arm64 Release configuration, create the DMG with the app,
 volume, and installer-file icons attached:
 
 ```sh
-Scripts/package-dmg.sh /path/to/Release/Paster.app
+Scripts/package-dmg.sh /path/to/Release/PasteList.app
 ```
 
 ## Privacy
 
-All clipboard data is stored locally. Paster does not use iCloud, analytics,
+All clipboard data is stored locally. PasteList does not use iCloud, analytics,
 or any external service.

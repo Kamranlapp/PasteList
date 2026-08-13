@@ -6,4 +6,4 @@ build/
 xcuserdata/
 *.profraw
 dist/*
-!dist/Paster-arm64.dmg
+!dist/PasteList-arm64.dmg
