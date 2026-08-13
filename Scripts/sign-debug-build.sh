@@ -14,10 +14,15 @@ if [[ ! -d "$app_path" ]]; then
     exit 1
 fi
 
-# An ad-hoc signature has a designated requirement tied to the binary hash, so
-# macOS invalidates Accessibility access after every rebuild. Re-sign the final
-# Debug product with a stable development identity after Xcode finishes building.
-identity="${KPASTE_SIGNING_IDENTITY:-}"
+# Automatic signing now gives Debug builds a stable development identity. This
+# legacy helper is intentionally a no-op for sandboxed builds so it cannot strip
+# Xcode's entitlements or interfere with Release and Archive.
+if [[ "${ENABLE_APP_SANDBOX:-NO}" == "YES" ]]; then
+    exit 0
+fi
+
+# Re-sign only legacy, non-sandboxed Debug builds.
+identity="${PASTER_SIGNING_IDENTITY:-}"
 if [[ -z "$identity" ]]; then
     identity="$({
         /usr/bin/security find-identity -v -p codesigning 2>/dev/null || true
