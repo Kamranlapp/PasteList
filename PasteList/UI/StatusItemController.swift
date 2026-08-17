@@ -136,12 +136,12 @@ final class StatusItemController: NSObject {
         let image = NSImage(named: "BarIcon")
             ?? NSImage(
                 systemSymbolName: "doc.on.clipboard",
-                accessibilityDescription: "PasteList"
+                accessibilityDescription: AppConfiguration.name
             )
         image?.size = NSSize(width: 22, height: 22)
         image?.isTemplate = true
         button.image = image
-        button.toolTip = "PasteList"
+        button.toolTip = AppConfiguration.name
         button.target = self
         button.action = #selector(statusItemClicked)
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -711,7 +711,7 @@ private struct StatusActionsView: View {
             actionButton("Reset Onboarding", systemImage: "arrow.counterclockwise", action: resetOnboarding)
             #endif
             Divider()
-            actionButton("Quit PasteList", systemImage: "power", action: quit)
+            actionButton("Quit \(AppConfiguration.name)", systemImage: "power", action: quit)
         }
         .padding(8)
         .frame(width: 220)

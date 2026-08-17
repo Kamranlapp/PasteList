@@ -16,7 +16,7 @@ final class OnboardingWindowController: NSWindowController {
         self.pasteAutomationController = pasteAutomationController
         self.globalHotKeyController = globalHotKeyController
         let window = NSWindow()
-        window.title = "Welcome to PasteList"
+        window.title = "Welcome to \(AppConfiguration.name)"
         window.styleMask = [.titled, .closable, .miniaturizable]
         window.setContentSize(NSSize(width: 640, height: 480))
         window.minSize = NSSize(width: 640, height: 480)
@@ -91,7 +91,7 @@ private struct OnboardingView: View {
                     }
                     .fixedSize()
                 }
-                Button(page == pageCount - 1 ? "Start Using PasteList" : "Continue") {
+                Button(page == pageCount - 1 ? "Start Using \(AppConfiguration.name)" : "Continue") {
                     if page == pageCount - 1 {
                         state.complete()
                         onFinish()

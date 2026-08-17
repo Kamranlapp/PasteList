@@ -11,7 +11,7 @@ final class PreferencesWindowController: NSWindowController {
             rootView: PreferencesContainerView(services: services)
         )
         let window = PreferencesWindow(contentViewController: contentViewController)
-        window.title = "PasteList Settings"
+        window.title = "\(AppConfiguration.name) Settings"
         window.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden

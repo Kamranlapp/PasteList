@@ -23,7 +23,7 @@ struct PreferencesView: View {
                 preferenceSection(.globalShortcut) {
                 Section("Global Shortcut") {
                     HStack {
-                        Text("Open PasteList")
+                        Text("Open \(AppConfiguration.name)")
                         Spacer()
                         HotKeyRecorderField(
                             hotKey: hotKeyController.currentHotKey,
@@ -130,7 +130,7 @@ struct PreferencesView: View {
                 if AppConfiguration.isOnboardingEnabled {
                     preferenceSection(.help) {
                         Section("Help") {
-                            Button("Show Welcome to PasteList") {
+                            Button("Show Welcome to \(AppConfiguration.name)") {
                                 onOpenOnboarding()
                             }
                         }
