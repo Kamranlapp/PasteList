@@ -362,6 +362,7 @@ final class PasteAutomationController: ObservableObject {
         await waitAfterPromptProbe()
         if !(await refreshAuthorizationNow()) {
             permissionRequestState = .awaitingSystemApproval
+            openPostEventSettings()
         }
         return isPostEventAuthorized
     }

@@ -138,13 +138,11 @@ private struct OnboardingView: View {
                 .scaleEffect(isAwaitingPulse ? 1.08 : 1.0)
             Text("Let PasteList paste for you")
                 .font(.system(size: 30, weight: .semibold))
-            Text(
-                "After you pick a clip, PasteList can jump back to your previous app and press ⌘V for you. macOS lists this PostEvent permission under Accessibility, but PasteList does not read or control other apps’ interfaces."
-            )
-            .font(.title3)
-            .foregroundStyle(.secondary)
-            .multilineTextAlignment(.center)
-            .frame(maxWidth: 480)
+            Text("Lets PasteList press ⌘V for you after you pick a clip.")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 480)
 
             if pasteAutomationController.isPostEventAuthorized {
                 Label("Automatic paste permission granted", systemImage: "checkmark.circle.fill")
@@ -176,10 +174,9 @@ private struct OnboardingView: View {
                                 .font(.title3)
                                 .foregroundStyle(.secondary)
 
-                            Text("Turn on the switch next to PasteList in System Settings, then come back — this window will continue on its own.")
+                            Text("Turn on the switch for PasteList.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
 
                             Button("Open System Settings") {
                                 pasteAutomationController.openPostEventSettings()
@@ -194,11 +191,9 @@ private struct OnboardingView: View {
                 }
             }
 
-            Text("You can skip this. PasteList will still copy the item, then you can press ⌘V manually — and you can grant access later in Settings.")
+            Text("You can skip this and paste manually with ⌘V.")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 480)
         }
         .padding(44)
     }
