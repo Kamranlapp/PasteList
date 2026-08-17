@@ -18,8 +18,8 @@ final class OnboardingWindowController: NSWindowController {
         let window = NSWindow()
         window.title = "Welcome to PasteList"
         window.styleMask = [.titled, .closable, .miniaturizable]
-        window.setContentSize(NSSize(width: 620, height: 480))
-        window.minSize = NSSize(width: 620, height: 480)
+        window.setContentSize(NSSize(width: 640, height: 480))
+        window.minSize = NSSize(width: 640, height: 480)
         window.isReleasedWhenClosed = false
         window.center()
         super.init(window: window)
@@ -89,6 +89,7 @@ private struct OnboardingView: View {
                     Button("Back") {
                         page -= 1
                     }
+                    .fixedSize()
                 }
                 Button(page == pageCount - 1 ? "Start Using PasteList" : "Continue") {
                     if page == pageCount - 1 {
@@ -99,10 +100,11 @@ private struct OnboardingView: View {
                     }
                 }
                 .keyboardShortcut(.defaultAction)
+                .fixedSize()
             }
             .padding(20)
         }
-        .frame(width: 620, height: 480)
+        .frame(width: 640, height: 480)
         .onAppear {
             pasteAutomationController.refreshAuthorization()
         }
@@ -138,55 +140,28 @@ private struct OnboardingView: View {
                 .scaleEffect(isAwaitingPulse ? 1.08 : 1.0)
             Text("Let PasteList paste for you")
                 .font(.system(size: 30, weight: .semibold))
-            Text("Lets PasteList press ⌘V for you after you pick a clip.")
-                .font(.title3)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 480)
 
             if pasteAutomationController.isPostEventAuthorized {
                 Label("Automatic paste permission granted", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
             } else {
-                VStack(spacing: 12) {
-                    HStack(spacing: 12) {
-                        Button("Give Access") {
-                            Task {
-                                await pasteAutomationController.requestAuthorization()
-                            }
-                        }
-                        .disabled(
-                            pasteAutomationController.permissionRequestState == .requesting
-                        )
-
-                        if pasteAutomationController.permissionRequestState == .requesting {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text("Requesting permission…")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                HStack(spacing: 12) {
+                    Button("Give Access") {
+                        Task {
+                            await pasteAutomationController.requestAuthorization()
                         }
                     }
+                    .disabled(
+                        pasteAutomationController.permissionRequestState == .requesting
+                    )
 
-                    if pasteAutomationController.permissionRequestState == .awaitingSystemApproval {
-                        VStack(spacing: 10) {
-                            Image(systemName: "gearshape.2")
-                                .font(.title3)
-                                .foregroundStyle(.secondary)
-
-                            Text("Turn on the switch for PasteList.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-
-                            Button("Open System Settings") {
-                                pasteAutomationController.openPostEventSettings()
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.large)
-                        }
-                        .padding(16)
-                        .frame(maxWidth: 380)
-                        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    if pasteAutomationController.permissionRequestState == .requesting
+                        || pasteAutomationController.permissionRequestState == .awaitingSystemApproval {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Waiting for approval…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
