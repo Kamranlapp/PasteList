@@ -12,6 +12,8 @@ struct HistoryView: View {
     @State private var hoveredClipID: Int64?
     @State private var mouseSwipeOffsets: [Int64: CGFloat] = [:]
     @ObservedObject private var selectionResetController: HistorySelectionResetController
+    @ObservedObject private var featureTipsState: FeatureTipsState
+    @State private var activeCoachMark: FeatureTip?
     private let blobStorage: BlobStorage
     private let thumbnailCache: ImageThumbnailCache
     private let usesTransparentBackground: Bool
@@ -22,6 +24,7 @@ struct HistoryView: View {
     private let onCursorPanelClearConfirmationChanged: (Bool) -> Void
     private let onSavedPanelVisibilityChanged: (Bool) -> Void
     private let onImagePreviewChanged: (Int64?) -> Void
+    private let isOnboardingCompleted: () -> Bool
     private static let listCoordinateSpace = "PasteListHistoryList"
     private static let imagePreviewHoverDelay = Duration.milliseconds(500)
 
@@ -38,7 +41,9 @@ struct HistoryView: View {
         onCursorPanelClearConfirmationChanged: @escaping (Bool) -> Void = { _ in },
         onSavedPanelVisibilityChanged: @escaping (Bool) -> Void = { _ in },
         onImagePreviewChanged: @escaping (Int64?) -> Void = { _ in },
-        selectionResetController: HistorySelectionResetController
+        selectionResetController: HistorySelectionResetController,
+        featureTipsState: FeatureTipsState = FeatureTipsState(),
+        isOnboardingCompleted: @escaping () -> Bool = { true }
     ) {
         self.viewModel = viewModel
         self.blobStorage = blobStorage
@@ -53,6 +58,29 @@ struct HistoryView: View {
         self.onSavedPanelVisibilityChanged = onSavedPanelVisibilityChanged
         self.onImagePreviewChanged = onImagePreviewChanged
         self.selectionResetController = selectionResetController
+        self.featureTipsState = featureTipsState
+        self.isOnboardingCompleted = isOnboardingCompleted
+    }
+
+    private func presentCoachMarksIfNeeded() {
+        guard usesTransparentBackground, isOnboardingCompleted() else {
+            return
+        }
+        if !featureTipsState.hasSeen(.cursorPanelControls) {
+            activeCoachMark = .cursorPanelControls
+        } else if !featureTipsState.hasSeen(.rowGestures) {
+            activeCoachMark = .rowGestures
+        }
+    }
+
+    private func dismissCoachMark(_ tip: FeatureTip) {
+        featureTipsState.markSeen(tip)
+        switch tip {
+        case .cursorPanelControls:
+            activeCoachMark = featureTipsState.hasSeen(.rowGestures) ? nil : .rowGestures
+        case .rowGestures:
+            activeCoachMark = nil
+        }
     }
 
     var body: some View {
@@ -131,8 +159,29 @@ struct HistoryView: View {
                         savedPanelVisibilityChanged: onSavedPanelVisibilityChanged,
                         clearHistory: viewModel.clearHistory,
                         filterMenuPresentationChanged: onCursorPanelFilterMenuPresentationChanged,
-                        clearConfirmationChanged: onCursorPanelClearConfirmationChanged
+                        clearConfirmationChanged: onCursorPanelClearConfirmationChanged,
+                        showsCoachMark: activeCoachMark == .cursorPanelControls,
+                        onDismissCoachMark: { dismissCoachMark(.cursorPanelControls) }
                     )
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                if usesTransparentBackground, activeCoachMark == .rowGestures {
+                    FeatureTipBubble(
+                        lines: [
+                            "Drag across the text of several clips to select them all, then paste as one block.",
+                            "Swipe a clip sideways to delete it.",
+                        ],
+                        onDismiss: { dismissCoachMark(.rowGestures) }
+                    )
+                    .padding(.leading, StatusItemController.cursorScrollBarWidth
+                        + StatusItemController.cursorScrollBarSpacing
+                        + StatusItemController.cursorPanelPadding)
+                    .padding(.top, StatusItemController.cursorWindowControlAreaHeight
+                        + StatusItemController.cursorWindowControlSpacing
+                        + StatusItemController.cursorPanelPadding
+                        + StatusItemController.cursorFirstRowCenterFromTop
+                        - 10)
                 }
             }
         }
@@ -177,6 +226,7 @@ struct HistoryView: View {
             }
             .onChange(of: selectionResetController.token) { _ in
                 resetSelectionState()
+                presentCoachMarksIfNeeded()
             }
             .task(id: hoveredClipID) {
                 await updateImagePreview()

@@ -7,6 +7,7 @@ final class AppServices: ObservableObject {
     @Published var pasteAutomationController: PasteAutomationController?
     @Published var launchAtLoginController: LaunchAtLoginController?
     @Published var onOpenOnboarding: (() -> Void)?
+    @Published var isOnboardingCompleted: (() -> Bool)?
 }
 
 @MainActor
@@ -61,30 +62,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.launchAtLoginController = launchAtLoginController
             services.launchAtLoginController = launchAtLoginController
             self.retentionScheduler = retentionScheduler
+            let onboardingState = OnboardingState()
+            let isOnboardingCompleted = { [weak onboardingState] in
+                onboardingState?.hasCompleted ?? false
+            }
+            services.isOnboardingCompleted = isOnboardingCompleted
             let preferencesWindowController = PreferencesWindowController(services: services)
             self.preferencesWindowController = preferencesWindowController
-            let onboardingWindowController = OnboardingWindowController(
-                state: OnboardingState(),
-                pasteAutomationController: pasteAutomationController
-            )
-            self.onboardingWindowController = onboardingWindowController
-            services.onOpenOnboarding = { [weak onboardingWindowController] in
-                onboardingWindowController?.show()
-            }
             let statusItemController = StatusItemController(
                 repository: repository,
                 blobStorage: blobStorage,
                 pasteboardMonitor: monitor,
                 pasteAutomationController: pasteAutomationController,
+                featureTipsState: FeatureTipsState(),
+                isOnboardingCompleted: isOnboardingCompleted,
                 onOpenSettings: { [weak preferencesWindowController] in
                     preferencesWindowController?.show()
                 }
             )
             self.statusItemController = statusItemController
-            globalHotKeyController = GlobalHotKeyController { [weak statusItemController] in
+            let globalHotKeyController = GlobalHotKeyController { [weak statusItemController] in
                 statusItemController?.toggleCursorPanelAtPointer()
             }
+            self.globalHotKeyController = globalHotKeyController
             services.globalHotKeyController = globalHotKeyController
+            let onboardingWindowController = OnboardingWindowController(
+                state: onboardingState,
+                pasteAutomationController: pasteAutomationController,
+                globalHotKeyController: globalHotKeyController
+            )
+            self.onboardingWindowController = onboardingWindowController
+            services.onOpenOnboarding = { [weak onboardingWindowController] in
+                onboardingWindowController?.show()
+            }
             retentionScheduler.start()
             monitor.start()
             onboardingWindowController.showIfNeeded()

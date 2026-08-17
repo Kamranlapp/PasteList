@@ -13,6 +13,8 @@ struct CursorPanelControls: View {
     let clearHistory: () -> Void
     let filterMenuPresentationChanged: (Bool) -> Void
     let clearConfirmationChanged: (Bool) -> Void
+    var showsCoachMark: Bool = false
+    var onDismissCoachMark: () -> Void = {}
     @State private var isHovering = false
     @State private var hoveredControl: Control?
     @State private var isFilterMenuPresented = false
@@ -135,8 +137,27 @@ struct CursorPanelControls: View {
             }
             .padding(.leading, 16)
             .padding(.top, StatusItemController.cursorWindowTooltipHeight)
-            .opacity(isHovering || isFilterMenuPresented || showsClearConfirmation ? 1 : 0)
-            .allowsHitTesting(isHovering || isFilterMenuPresented || showsClearConfirmation)
+            .opacity(isHovering || isFilterMenuPresented || showsClearConfirmation || showsCoachMark ? 1 : 0)
+            .allowsHitTesting(isHovering || isFilterMenuPresented || showsClearConfirmation || showsCoachMark)
+
+            if showsCoachMark {
+                FeatureTipBubble(
+                    lines: [
+                        "Pin — keep a clip so it won't be cleared automatically",
+                        "Resize — drag to change the panel's size",
+                        "Saved — open your saved clips list",
+                        "Plain text — paste without formatting",
+                    ],
+                    onDismiss: onDismissCoachMark
+                )
+                .padding(.leading, 16)
+                .padding(
+                    .top,
+                    StatusItemController.cursorWindowTooltipHeight
+                        + StatusItemController.cursorWindowControlDiameter
+                        + 10
+                )
+            }
         }
         .frame(width: 250, height: 92, alignment: .topLeading)
         .alert("Clear Clipboard History?", isPresented: clearConfirmationBinding) {

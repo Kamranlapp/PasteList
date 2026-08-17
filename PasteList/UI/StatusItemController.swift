@@ -49,6 +49,8 @@ final class StatusItemController: NSObject {
     private let historyViewModel: HistoryViewModel
     private let thumbnailCache: ImageThumbnailCache
     private let selectionResetController: HistorySelectionResetController
+    private let featureTipsState: FeatureTipsState
+    private let isOnboardingCompleted: () -> Bool
     private let pasteAutomationController: PasteAutomationController
     private let pasteFallbackPanel: PasteFallbackPanelController
     private let appReviewRequestController: AppReviewRequestController
@@ -69,11 +71,15 @@ final class StatusItemController: NSObject {
         pasteboardMonitor: PasteboardMonitor,
         pasteAutomationController: PasteAutomationController,
         appReviewRequestController: AppReviewRequestController = AppReviewRequestController(),
+        featureTipsState: FeatureTipsState = FeatureTipsState(),
+        isOnboardingCompleted: @escaping () -> Bool = { true },
         onOpenSettings: @escaping () -> Void
     ) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         actionsPopover = NSPopover()
         selectionResetController = HistorySelectionResetController()
+        self.featureTipsState = featureTipsState
+        self.isOnboardingCompleted = isOnboardingCompleted
         let initialCursorPanelSize = Self.storedCursorPanelSize()
         cursorPanel = CursorHistoryPanel(
             contentRect: NSRect(origin: .zero, size: initialCursorPanelSize),
@@ -204,7 +210,9 @@ final class StatusItemController: NSObject {
                 onImagePreviewChanged: { [weak self] clipID in
                     self?.setImagePreview(clipID: clipID)
                 },
-                selectionResetController: selectionResetController
+                selectionResetController: selectionResetController,
+                featureTipsState: featureTipsState,
+                isOnboardingCompleted: isOnboardingCompleted
             )
         )
         // The hosting controller would otherwise push its own fitting size onto

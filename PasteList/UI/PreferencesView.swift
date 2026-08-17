@@ -209,7 +209,7 @@ struct PreferencesContainerView: View {
     }
 }
 
-private struct HotKeyRecorderField: NSViewRepresentable {
+struct HotKeyRecorderField: NSViewRepresentable {
     let hotKey: HotKey
     let onRecord: (HotKey) -> Bool
 
@@ -224,7 +224,7 @@ private struct HotKeyRecorderField: NSViewRepresentable {
     }
 }
 
-private final class HotKeyRecorderNSView: NSView {
+final class HotKeyRecorderNSView: NSView {
     var hotKey: HotKey
     var onRecord: (HotKey) -> Bool
 
