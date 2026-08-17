@@ -19,6 +19,9 @@ struct CursorPanelControls: View {
     @State private var hoveredControl: Control?
     @State private var isFilterMenuPresented = false
     @State private var showsClearConfirmation = false
+    @State private var coachMarkStep = 0
+
+    private static let coachMarkControls: [Control] = [.pin, .resize, .saved, .plainText]
 
     private enum Control: String {
         case pin = "Pin"
@@ -141,15 +144,15 @@ struct CursorPanelControls: View {
             .allowsHitTesting(isHovering || isFilterMenuPresented || showsClearConfirmation || showsCoachMark)
 
             if showsCoachMark {
-                FeatureTipBubble(
-                    lines: [
-                        "Pin — keep a clip so it won't be cleared automatically",
-                        "Resize — drag to change the panel's size",
-                        "Saved — open your saved clips list",
-                        "Plain text — paste without formatting",
-                    ],
-                    onDismiss: onDismissCoachMark
+                let control = Self.coachMarkControls[coachMarkStep]
+                FeatureTipArrowBubble(
+                    text: coachMarkText(for: control),
+                    arrowOffsetX: centerX(for: control),
+                    stepIndex: coachMarkStep,
+                    stepCount: Self.coachMarkControls.count,
+                    onNext: advanceCoachMark
                 )
+                .id(control)
                 .padding(.leading, 16)
                 .padding(
                     .top,
@@ -157,6 +160,11 @@ struct CursorPanelControls: View {
                         + StatusItemController.cursorWindowControlDiameter
                         + 10
                 )
+            }
+        }
+        .onChange(of: showsCoachMark) { isShowing in
+            if isShowing {
+                coachMarkStep = 0
             }
         }
         .frame(width: 250, height: 92, alignment: .topLeading)
@@ -220,6 +228,40 @@ struct CursorPanelControls: View {
                 .offset(y: -StatusItemController.cursorWindowTooltipHeight)
                 .transition(.opacity.combined(with: .scale(scale: 0.92)))
         }
+    }
+
+    private func advanceCoachMark() {
+        let isLastStep = coachMarkStep >= Self.coachMarkControls.count - 1
+        withAnimation(.easeInOut(duration: 0.18)) {
+            if isLastStep {
+                onDismissCoachMark()
+            } else {
+                coachMarkStep += 1
+            }
+        }
+    }
+
+    private func coachMarkText(for control: Control) -> String {
+        switch control {
+        case .pin:
+            "Pin keeps a clip so it won't be cleared automatically."
+        case .resize:
+            "Resize by dragging to change the panel's size."
+        case .saved:
+            "Saved opens your saved clips list."
+        case .plainText:
+            "Plain text pastes without formatting."
+        default:
+            ""
+        }
+    }
+
+    private func centerX(for control: Control) -> CGFloat {
+        let order: [Control] = [.pin, .move, .resize, .saved, .plainText, .filter, .clear]
+        guard let index = order.firstIndex(of: control) else {
+            return 0
+        }
+        return CGFloat(index) * 32 + 12
     }
 
     private func setHoveredControl(_ control: Control, isInside: Bool) {

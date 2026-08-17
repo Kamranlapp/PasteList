@@ -55,6 +55,7 @@
 		100000000000000000000041 /* AppReviewRequestControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000041 /* AppReviewRequestControllerTests.swift */; };
 		100000000000000000000042 /* FeatureTipsState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000042 /* FeatureTipsState.swift */; };
 		100000000000000000000043 /* FeatureTipBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000043 /* FeatureTipBubble.swift */; };
+		100000000000000000000044 /* FeatureTipArrowBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000044 /* FeatureTipArrowBubble.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -114,6 +115,7 @@
 		20000000000000000000003D /* OnboardingWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingWindowController.swift; sourceTree = "<group>"; };
 		200000000000000000000042 /* FeatureTipsState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureTipsState.swift; sourceTree = "<group>"; };
 		200000000000000000000043 /* FeatureTipBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureTipBubble.swift; sourceTree = "<group>"; };
+		200000000000000000000044 /* FeatureTipArrowBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureTipArrowBubble.swift; sourceTree = "<group>"; };
 		20000000000000000000003E /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		200000000000000000000040 /* AppReviewRequestController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppReviewRequestController.swift; sourceTree = "<group>"; };
 		200000000000000000000041 /* AppReviewRequestControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppReviewRequestControllerTests.swift; sourceTree = "<group>"; };
@@ -247,6 +249,7 @@
 				200000000000000000000039 /* ImagePreviewPanelController.swift */,
 				20000000000000000000003D /* OnboardingWindowController.swift */,
 				200000000000000000000043 /* FeatureTipBubble.swift */,
+				200000000000000000000044 /* FeatureTipArrowBubble.swift */,
 				20000000000000000000003F /* PasteFallbackPanelController.swift */,
 				200000000000000000000021 /* ImageThumbnailCache.swift */,
 				200000000000000000000026 /* PreferencesView.swift */,
@@ -397,6 +400,7 @@
 				100000000000000000000039 /* ImagePreviewPanelController.swift in Sources */,
 				10000000000000000000003D /* OnboardingWindowController.swift in Sources */,
 				100000000000000000000043 /* FeatureTipBubble.swift in Sources */,
+				100000000000000000000044 /* FeatureTipArrowBubble.swift in Sources */,
 				100000000000000000000021 /* ImageThumbnailCache.swift in Sources */,
 				100000000000000000000026 /* PreferencesView.swift in Sources */,
 				100000000000000000000028 /* PreferencesWindowController.swift in Sources */,
