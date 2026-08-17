@@ -64,6 +64,7 @@ private struct OnboardingView: View {
     let onFinish: () -> Void
 
     @State private var page = 0
+    @State private var isAwaitingPulse = false
 
     private let pageCount = 2
 
@@ -105,6 +106,26 @@ private struct OnboardingView: View {
         .onAppear {
             pasteAutomationController.refreshAuthorization()
         }
+        .onChange(of: pasteAutomationController.isPostEventAuthorized) { isAuthorized in
+            guard isAuthorized, page == 0 else { return }
+            Task {
+                try? await Task.sleep(nanoseconds: 650_000_000)
+                withAnimation {
+                    page = 1
+                }
+            }
+        }
+        .onChange(of: pasteAutomationController.permissionRequestState) { newState in
+            if newState == .awaitingSystemApproval {
+                withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+                    isAwaitingPulse = true
+                }
+            } else {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isAwaitingPulse = false
+                }
+            }
+        }
     }
 
     private var accessibilityPage: some View {
@@ -114,6 +135,7 @@ private struct OnboardingView: View {
                 : "accessibility")
                 .font(.system(size: 64, weight: .medium))
                 .foregroundStyle(pasteAutomationController.isPostEventAuthorized ? Color.green : Color.accentColor)
+                .scaleEffect(isAwaitingPulse ? 1.08 : 1.0)
             Text("Let PasteList paste for you")
                 .font(.system(size: 30, weight: .semibold))
             Text(
@@ -149,8 +171,12 @@ private struct OnboardingView: View {
                     }
 
                     if pasteAutomationController.permissionRequestState == .awaitingSystemApproval {
-                        VStack(spacing: 6) {
-                            Text("Waiting for macOS approval. Use the system permission alert; do not add PasteList manually.")
+                        VStack(spacing: 10) {
+                            Image(systemName: "gearshape.2")
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+
+                            Text("Turn on the switch next to PasteList in System Settings, then come back — this window will continue on its own.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
@@ -158,9 +184,12 @@ private struct OnboardingView: View {
                             Button("Open System Settings") {
                                 pasteAutomationController.openPostEventSettings()
                             }
-                            .buttonStyle(.link)
-                            .font(.caption)
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.large)
                         }
+                        .padding(16)
+                        .frame(maxWidth: 380)
+                        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
                 }
             }

@@ -69,12 +69,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             services.isOnboardingCompleted = isOnboardingCompleted
             let preferencesWindowController = PreferencesWindowController(services: services)
             self.preferencesWindowController = preferencesWindowController
+            let featureTipsState = FeatureTipsState()
             let statusItemController = StatusItemController(
                 repository: repository,
                 blobStorage: blobStorage,
                 pasteboardMonitor: monitor,
                 pasteAutomationController: pasteAutomationController,
-                featureTipsState: FeatureTipsState(),
+                featureTipsState: featureTipsState,
                 isOnboardingCompleted: isOnboardingCompleted,
                 onOpenSettings: { [weak preferencesWindowController] in
                     preferencesWindowController?.show()
@@ -95,6 +96,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             services.onOpenOnboarding = { [weak onboardingWindowController] in
                 onboardingWindowController?.show()
             }
+            #if DEBUG
+            statusItemController.onResetOnboarding = { [weak onboardingState, weak featureTipsState, weak onboardingWindowController] in
+                onboardingState?.reset()
+                featureTipsState?.resetAll()
+                onboardingWindowController?.show()
+            }
+            #endif
             retentionScheduler.start()
             monitor.start()
             onboardingWindowController.showIfNeeded()

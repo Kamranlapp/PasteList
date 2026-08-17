@@ -55,6 +55,9 @@ final class StatusItemController: NSObject {
     private let pasteFallbackPanel: PasteFallbackPanelController
     private let appReviewRequestController: AppReviewRequestController
     private let onOpenSettings: () -> Void
+    #if DEBUG
+    var onResetOnboarding: (() -> Void)?
+    #endif
     private var isCursorPanelPinned = false
     private var isCursorPanelResizeModeEnabled = false
     private var isCursorPanelFilterMenuPresented = false
@@ -147,7 +150,28 @@ final class StatusItemController: NSObject {
     private func configureActionsPopover() {
         actionsPopover.behavior = .transient
         actionsPopover.animates = true
+        #if DEBUG
+        actionsPopover.contentSize = NSSize(width: 220, height: 130)
+        #else
         actionsPopover.contentSize = NSSize(width: 220, height: 92)
+        #endif
+        #if DEBUG
+        actionsPopover.contentViewController = NSHostingController(
+            rootView: StatusActionsView(
+                openSettings: { [weak self] in
+                    self?.actionsPopover.performClose(nil)
+                    self?.onOpenSettings()
+                },
+                quit: {
+                    NSApp.terminate(nil)
+                },
+                resetOnboarding: { [weak self] in
+                    self?.actionsPopover.performClose(nil)
+                    self?.onResetOnboarding?()
+                }
+            )
+        )
+        #else
         actionsPopover.contentViewController = NSHostingController(
             rootView: StatusActionsView(
                 openSettings: { [weak self] in
@@ -159,6 +183,7 @@ final class StatusItemController: NSObject {
                 }
             )
         )
+        #endif
     }
 
     private func configureCursorPanel(blobStorage: BlobStorage) {
@@ -674,10 +699,17 @@ final class CursorHistoryPanel: NSPanel {
 private struct StatusActionsView: View {
     let openSettings: () -> Void
     let quit: () -> Void
+    #if DEBUG
+    let resetOnboarding: () -> Void
+    #endif
 
     var body: some View {
         VStack(spacing: 4) {
             actionButton("Settings…", systemImage: "gearshape", action: openSettings)
+            #if DEBUG
+            Divider()
+            actionButton("Reset Onboarding", systemImage: "arrow.counterclockwise", action: resetOnboarding)
+            #endif
             Divider()
             actionButton("Quit PasteList", systemImage: "power", action: quit)
         }

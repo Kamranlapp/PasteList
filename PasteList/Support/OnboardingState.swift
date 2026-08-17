@@ -24,4 +24,11 @@ final class OnboardingState: ObservableObject {
         userDefaults.set(true, forKey: DefaultsKey.completed)
         hasCompleted = true
     }
+
+    #if DEBUG
+    func reset() {
+        userDefaults.removeObject(forKey: DefaultsKey.completed)
+        hasCompleted = false
+    }
+    #endif
 }

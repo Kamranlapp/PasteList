@@ -28,4 +28,11 @@ final class FeatureTipsState: ObservableObject {
         userDefaults.set(true, forKey: DefaultsKey.seen(tip))
         objectWillChange.send()
     }
+
+    #if DEBUG
+    func resetAll() {
+        FeatureTip.allCases.forEach { userDefaults.removeObject(forKey: DefaultsKey.seen($0)) }
+        objectWillChange.send()
+    }
+    #endif
 }
