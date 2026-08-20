@@ -1,21 +1,14 @@
 import AppKit
+import ApplicationServices
+import Carbon
 import Combine
 import CoreGraphics
 import Foundation
-import OSLog
 
-enum EventPostingRoute: Equatable {
-    case session
-    case hid
-
-    var tapLocation: CGEventTapLocation {
-        switch self {
-        case .session:
-            return .cgSessionEventTap
-        case .hid:
-            return .cghidEventTap
-        }
-    }
+enum AuthorizationRefreshSurface: Hashable {
+    case settings
+    case onboarding
+    case permissionPrompt
 }
 
 enum PostEventPermissionState: Equatable {
@@ -35,127 +28,61 @@ enum PostEventPermissionRequestState: Equatable {
 
 @MainActor
 struct PostEventPermissionClient {
-    let preflight: () -> Bool
+    let isTrusted: () -> Bool
     let request: () -> Bool
-    let verifyPosting: () async -> EventPostingRoute?
 
     static let live = PostEventPermissionClient(
-        preflight: { CGPreflightPostEventAccess() },
-        request: { CGRequestPostEventAccess() },
-        verifyPosting: verifyPostEventDelivery
+        isTrusted: {
+            let options = [
+                "AXTrustedCheckOptionPrompt": false,
+            ] as CFDictionary
+            return AXIsProcessTrustedWithOptions(options)
+        },
+        request: { CGRequestPostEventAccess() }
     )
 }
 
-private enum PostEventDeliveryProbe {
-    static let eventCount = 3
-    static let resultDelayNanoseconds: UInt64 = 40_000_000
-}
-
-/// Verifies that WindowServer accepted synthetic session events instead of
-/// trusting TCC's preflight value alone. macOS 26 can grant the permission in
-/// the Accessibility UI while `CGPreflightPostEventAccess` remains false.
-/// Both event types are no-ops; requiring both counters to advance prevents
-/// normal pointer movement from being mistaken for a successful probe.
-private let automaticPasteLogger = Logger(
-    subsystem: AppConfiguration.bundleIdentifier,
-    category: "AutomaticPaste"
-)
-
-private func verifyPostEventDelivery() async -> EventPostingRoute? {
-    for route in [EventPostingRoute.session, .hid] {
-        if await verifyPostEventDelivery(using: route) {
-            automaticPasteLogger.notice("Verified event posting route: \(String(describing: route), privacy: .public)")
-            return route
-        }
-    }
-    automaticPasteLogger.notice("No event posting route is currently accepted")
-    return nil
-}
-
-private func verifyPostEventDelivery(using route: EventPostingRoute) async -> Bool {
-    let mouseBefore = CGEventSource.counterForEventType(
-        .combinedSessionState,
-        eventType: .mouseMoved
-    )
-    let scrollBefore = CGEventSource.counterForEventType(
-        .combinedSessionState,
-        eventType: .scrollWheel
-    )
-
-    guard let source = CGEventSource(stateID: .hidSystemState) else {
-        return false
-    }
-
-    // CGEvent expects the CoreGraphics global display coordinate space
-    // (origin top-left), not NSEvent.mouseLocation's AppKit space (origin
-    // bottom-left) — reading the location back from a CGEvent keeps both
-    // in the same space and avoids warping the real cursor on multi-monitor setups.
-    let currentCursorPosition = CGEvent(source: nil)?.location ?? .zero
-
-    for _ in 0..<PostEventDeliveryProbe.eventCount {
-        guard
-            let mouseEvent = CGEvent(
-                mouseEventSource: source,
-                mouseType: .mouseMoved,
-                mouseCursorPosition: currentCursorPosition,
-                mouseButton: .left
-            ),
-            let scrollEvent = CGEvent(
-                scrollWheelEvent2Source: source,
-                units: .pixel,
-                wheelCount: 1,
-                wheel1: 0,
-                wheel2: 0,
-                wheel3: 0
-            )
-        else {
-            return false
-        }
-
-        mouseEvent.post(tap: route.tapLocation)
-        scrollEvent.post(tap: route.tapLocation)
-    }
-
-    try? await Task.sleep(nanoseconds: PostEventDeliveryProbe.resultDelayNanoseconds)
-
-    let mouseAfter = CGEventSource.counterForEventType(
-        .combinedSessionState,
-        eventType: .mouseMoved
-    )
-    let scrollAfter = CGEventSource.counterForEventType(
-        .combinedSessionState,
-        eventType: .scrollWheel
-    )
-    return mouseAfter &- mouseBefore >= PostEventDeliveryProbe.eventCount
-        && scrollAfter &- scrollBefore >= PostEventDeliveryProbe.eventCount
-}
-
-private func postCommandVPasteEvent(using route: EventPostingRoute) -> Bool {
+private func postCommandVPasteEvent() -> Bool {
     guard
         let source = CGEventSource(stateID: .hidSystemState),
-        let keyDown = CGEvent(
+        let commandDown = CGEvent(
             keyboardEventSource: source,
-            virtualKey: 9,
+            virtualKey: CGKeyCode(kVK_Command),
             keyDown: true
         ),
-        let keyUp = CGEvent(
+        let pasteDown = CGEvent(
             keyboardEventSource: source,
-            virtualKey: 9,
+            virtualKey: CGKeyCode(kVK_ANSI_V),
+            keyDown: true
+        ),
+        let pasteUp = CGEvent(
+            keyboardEventSource: source,
+            virtualKey: CGKeyCode(kVK_ANSI_V),
+            keyDown: false
+        ),
+        let commandUp = CGEvent(
+            keyboardEventSource: source,
+            virtualKey: CGKeyCode(kVK_Command),
             keyDown: false
         )
     else {
         return false
     }
 
-    keyDown.flags = .maskCommand
-    keyUp.flags = .maskCommand
-    keyDown.post(tap: route.tapLocation)
-    keyUp.post(tap: route.tapLocation)
+    commandDown.flags = .maskCommand
+    pasteDown.flags = .maskCommand
+    pasteUp.flags = .maskCommand
+    commandUp.flags = []
+    commandDown.post(tap: .cghidEventTap)
+    pasteDown.post(tap: .cghidEventTap)
+    pasteUp.post(tap: .cghidEventTap)
+    commandUp.post(tap: .cghidEventTap)
     return true
 }
 
 enum PasteAutomationResult: Equatable {
     case pastedAutomatically
+    case permissionRequired
     case copiedForManualPaste
 }
 
@@ -178,20 +105,17 @@ final class PasteAutomationController: ObservableObject {
     private let permissionClient: PostEventPermissionClient
     private let frontmostApplication: () -> TargetApplication?
     private let isApplicationFrontmost: (pid_t) -> Bool
-    private let postCommandV: (EventPostingRoute) -> Bool
+    private let postCommandV: () -> Bool
     private let waitBeforePosting: () async -> Void
-    private let waitAfterPromptProbe: () async -> Void
-    private let recordPermissionRequest: () -> Void
+    private let openSystemSettings: () -> Void
     private let backgroundRefreshInterval: TimeInterval
     private let settingsRefreshInterval: TimeInterval
     private var previousApplication: TargetApplication?
     private var authorizationRefreshTask: Task<Void, Never>?
-    private var authorizationVerificationTask: Task<EventPostingRoute?, Never>?
     private var applicationDidBecomeActiveCancellable: AnyCancellable?
+    private var visibleAuthorizationSurfaces: Set<AuthorizationRefreshSurface> = []
     private(set) var authorizationRefreshInterval: TimeInterval
     private(set) var authorizationMonitorGeneration = 0
-    private var permissionWasRequested: Bool
-    private var activePostingRoute: EventPostingRoute?
 
     init(
         permissionClient: PostEventPermissionClient = .live,
@@ -211,19 +135,17 @@ final class PasteAutomationController: ObservableObject {
         isApplicationFrontmost: @escaping (pid_t) -> Bool = { processIdentifier in
             NSWorkspace.shared.frontmostApplication?.processIdentifier == processIdentifier
         },
-        postCommandV: @escaping (EventPostingRoute) -> Bool = postCommandVPasteEvent,
+        postCommandV: @escaping () -> Bool = postCommandVPasteEvent,
         waitBeforePosting: @escaping () async -> Void = {
             try? await Task.sleep(nanoseconds: 150_000_000)
         },
-        waitAfterPromptProbe: @escaping () async -> Void = {
-            try? await Task.sleep(nanoseconds: 300_000_000)
-        },
-        permissionWasRequested: Bool? = nil,
-        recordPermissionRequest: @escaping () -> Void = {
-            UserDefaults.standard.set(
-                true,
-                forKey: "postEventPermissionWasRequested"
-            )
+        openSystemSettings: @escaping () -> Void = {
+            guard let url = URL(
+                string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+            ) else {
+                return
+            }
+            NSWorkspace.shared.open(url)
         },
         backgroundRefreshInterval: TimeInterval = 60,
         settingsRefreshInterval: TimeInterval = 1
@@ -233,16 +155,11 @@ final class PasteAutomationController: ObservableObject {
         self.isApplicationFrontmost = isApplicationFrontmost
         self.postCommandV = postCommandV
         self.waitBeforePosting = waitBeforePosting
-        self.waitAfterPromptProbe = waitAfterPromptProbe
-        self.recordPermissionRequest = recordPermissionRequest
+        self.openSystemSettings = openSystemSettings
         self.backgroundRefreshInterval = backgroundRefreshInterval
         self.settingsRefreshInterval = settingsRefreshInterval
         authorizationRefreshInterval = backgroundRefreshInterval
-        self.permissionWasRequested = permissionWasRequested
-            ?? UserDefaults.standard.bool(forKey: "postEventPermissionWasRequested")
-        let preflightGranted = permissionClient.preflight()
-        activePostingRoute = preflightGranted ? .session : nil
-        permissionState = PostEventPermissionState(isGranted: preflightGranted)
+        permissionState = PostEventPermissionState(isGranted: permissionClient.isTrusted())
         applicationDidBecomeActiveCancellable = NotificationCenter.default
             .publisher(for: NSApplication.didBecomeActiveNotification)
             .sink { [weak self] _ in
@@ -251,11 +168,6 @@ final class PasteAutomationController: ObservableObject {
                 }
             }
         scheduleAuthorizationRefresh(every: authorizationRefreshInterval)
-        if permissionWasRequested == nil && self.permissionWasRequested {
-            Task { @MainActor [weak self] in
-                await self?.refreshAuthorizationNow()
-            }
-        }
     }
 
     func rememberFrontmostApplication() {
@@ -270,61 +182,40 @@ final class PasteAutomationController: ObservableObject {
     }
 
     func refreshAuthorization() {
-        if permissionClient.preflight() {
-            applyAuthorization(route: .session)
-        } else if permissionWasRequested {
-            Task { @MainActor [weak self] in
-                await self?.refreshAuthorizationNow()
-            }
-        } else {
-            applyAuthorization(route: nil)
-        }
+        applyAuthorization(isGranted: permissionClient.isTrusted())
     }
 
     @discardableResult
     func refreshAuthorizationNow() async -> Bool {
-        if permissionClient.preflight() {
-            applyAuthorization(route: .session)
-            return true
-        }
-        guard permissionWasRequested else {
-            applyAuthorization(route: nil)
-            return false
-        }
-
-        if let authorizationVerificationTask {
-            let route = await authorizationVerificationTask.value
-            applyAuthorization(route: route)
-            return route != nil
-        }
-
-        let verificationTask = Task { @MainActor [permissionClient] in
-            await permissionClient.verifyPosting()
-        }
-        authorizationVerificationTask = verificationTask
-        let route = await verificationTask.value
-        authorizationVerificationTask = nil
-        applyAuthorization(route: route)
-        return route != nil
+        let isGranted = permissionClient.isTrusted()
+        applyAuthorization(isGranted: isGranted)
+        return isGranted
     }
 
-    private func applyAuthorization(route: EventPostingRoute?) {
-        activePostingRoute = route
-        permissionState = PostEventPermissionState(isGranted: route != nil)
-        if route != nil {
+    private func applyAuthorization(isGranted: Bool) {
+        permissionState = PostEventPermissionState(isGranted: isGranted)
+        if isGranted {
             permissionRequestState = .idle
         }
     }
 
     func setSettingsVisible(_ isVisible: Bool) {
+        setAuthorizationSurface(.settings, visible: isVisible)
+    }
+
+    func setAuthorizationSurface(
+        _ surface: AuthorizationRefreshSurface,
+        visible isVisible: Bool
+    ) {
         if isVisible {
-            Task { @MainActor [weak self] in
-                await self?.refreshAuthorizationNow()
-            }
+            visibleAuthorizationSurfaces.insert(surface)
+            refreshAuthorization()
+        } else {
+            visibleAuthorizationSurfaces.remove(surface)
         }
-        let interval = isVisible
-            ? settingsRefreshInterval
-            : backgroundRefreshInterval
+        let interval = visibleAuthorizationSurfaces.isEmpty
+            ? backgroundRefreshInterval
+            : settingsRefreshInterval
         guard interval != authorizationRefreshInterval else { return }
         authorizationRefreshInterval = interval
         scheduleAuthorizationRefresh(every: interval)
@@ -345,8 +236,7 @@ final class PasteAutomationController: ObservableObject {
     }
 
     /// This is the only method that may trigger the system PostEvent prompt.
-    /// Call it exclusively from an explicit user action. The probe is posted
-    /// only when the direct request did not immediately grant access.
+    /// Call it exclusively from an explicit user action.
     @discardableResult
     func requestAuthorization() async -> Bool {
         guard permissionRequestState != .requesting else {
@@ -358,28 +248,21 @@ final class PasteAutomationController: ObservableObject {
         }
 
         permissionRequestState = .requesting
-        permissionWasRequested = true
-        recordPermissionRequest()
         _ = permissionClient.request()
-        if await refreshAuthorizationNow() {
-            return true
-        }
-
-        await waitAfterPromptProbe()
-        if !(await refreshAuthorizationNow()) {
+        // Pastebot requests PostEvent access and immediately opens the exact
+        // Accessibility pane. Trust is authoritative and is polled while the
+        // permission UI is visible; the request's return value is not treated
+        // as the final TCC state.
+        openPostEventSettings()
+        let isGranted = await refreshAuthorizationNow()
+        if !isGranted {
             permissionRequestState = .awaitingSystemApproval
-            openPostEventSettings()
         }
-        return isPostEventAuthorized
+        return isGranted
     }
 
     func openPostEventSettings() {
-        guard let url = URL(
-            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-        ) else {
-            return
-        }
-        NSWorkspace.shared.open(url)
+        openSystemSettings()
     }
 
     func pasteIntoPreviousApplication() async -> PasteAutomationResult {
@@ -392,10 +275,10 @@ final class PasteAutomationController: ObservableObject {
             return .copiedForManualPaste
         }
 
-        guard application.activate() else {
-            return .copiedForManualPaste
-        }
         guard await refreshAuthorizationNow() else {
+            return .permissionRequired
+        }
+        guard application.activate() else {
             return .copiedForManualPaste
         }
 
@@ -403,10 +286,7 @@ final class PasteAutomationController: ObservableObject {
         guard isApplicationFrontmost(application.processIdentifier) else {
             return .copiedForManualPaste
         }
-        guard let activePostingRoute else {
-            return .copiedForManualPaste
-        }
-        return postCommandV(activePostingRoute)
+        return postCommandV()
             ? .pastedAutomatically
             : .copiedForManualPaste
     }

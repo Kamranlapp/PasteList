@@ -14,6 +14,7 @@ struct HistoryView: View {
     @ObservedObject private var selectionResetController: HistorySelectionResetController
     @ObservedObject private var featureTipsState: FeatureTipsState
     @State private var activeCoachMark: FeatureTip?
+    @State private var rowCoachMarkStep = 0
     private let blobStorage: BlobStorage
     private let thumbnailCache: ImageThumbnailCache
     private let usesTransparentBackground: Bool
@@ -27,6 +28,23 @@ struct HistoryView: View {
     private let isOnboardingCompleted: () -> Bool
     private static let listCoordinateSpace = "PasteListHistoryList"
     private static let imagePreviewHoverDelay = Duration.milliseconds(500)
+    private static let controlCoachMarkClearanceHeight: CGFloat = 180
+    private static let rowCoachMarkClearanceHeight: CGFloat = 180
+    private static let rowCoachMarkLines = [
+        [
+            "Move as a file",
+            "Drag&Drop images, files and folder.",
+        ],
+        [
+            "Delete entry",
+            "Swipe left to delete single clip",
+        ],
+        [
+            "Multi-text paste",
+            "Select few texts entries",
+            "Paste at once as it is or with separator from right side panel",
+        ],
+    ]
 
     init(
         viewModel: HistoryViewModel,
@@ -69,6 +87,7 @@ struct HistoryView: View {
         if !featureTipsState.hasSeen(.cursorPanelControls) {
             activeCoachMark = .cursorPanelControls
         } else if !featureTipsState.hasSeen(.rowGestures) {
+            rowCoachMarkStep = 0
             activeCoachMark = .rowGestures
         }
     }
@@ -77,9 +96,21 @@ struct HistoryView: View {
         featureTipsState.markSeen(tip)
         switch tip {
         case .cursorPanelControls:
+            rowCoachMarkStep = 0
             activeCoachMark = featureTipsState.hasSeen(.rowGestures) ? nil : .rowGestures
         case .rowGestures:
             activeCoachMark = nil
+        }
+    }
+
+    private func advanceRowCoachMark() {
+        let isLastStep = rowCoachMarkStep >= Self.rowCoachMarkLines.count - 1
+        withAnimation(.easeInOut(duration: 0.18)) {
+            if isLastStep {
+                dismissCoachMark(.rowGestures)
+            } else {
+                rowCoachMarkStep += 1
+            }
         }
     }
 
@@ -93,7 +124,7 @@ struct HistoryView: View {
             ) {
                 if usesTransparentBackground {
                     Color.clear
-                        .frame(width: 152, height: StatusItemController.cursorWindowControlAreaHeight)
+                        .frame(width: 152, height: topAccessoryHeight)
                         .padding(
                             .leading,
                             StatusItemController.cursorScrollBarWidth
@@ -148,42 +179,77 @@ struct HistoryView: View {
             )
             .overlay(alignment: .topLeading) {
                 if usesTransparentBackground {
-                    CursorPanelControls(
-                        isPinned: $isCursorPanelPinned,
-                        isResizeModeEnabled: $isCursorPanelResizeModeEnabled,
-                        isSavedPanelVisible: $isSavedPanelVisible,
-                        pastesAsPlainText: $viewModel.pastesAsPlainText,
-                        filter: $viewModel.filter,
-                        pinChanged: onCursorPanelPinChanged,
-                        resizeModeChanged: onCursorPanelResizeModeChanged,
-                        savedPanelVisibilityChanged: onSavedPanelVisibilityChanged,
-                        clearHistory: viewModel.clearHistory,
-                        filterMenuPresentationChanged: onCursorPanelFilterMenuPresentationChanged,
-                        clearConfirmationChanged: onCursorPanelClearConfirmationChanged,
-                        showsCoachMark: activeCoachMark == .cursorPanelControls,
-                        onDismissCoachMark: { dismissCoachMark(.cursorPanelControls) }
-                    )
+                    GeometryReader { proxy in
+                        CursorPanelControls(
+                            isPinned: $isCursorPanelPinned,
+                            isResizeModeEnabled: $isCursorPanelResizeModeEnabled,
+                            isSavedPanelVisible: $isSavedPanelVisible,
+                            pastesAsPlainText: $viewModel.pastesAsPlainText,
+                            filter: $viewModel.filter,
+                            pinChanged: onCursorPanelPinChanged,
+                            resizeModeChanged: onCursorPanelResizeModeChanged,
+                            savedPanelVisibilityChanged: onSavedPanelVisibilityChanged,
+                            clearHistory: viewModel.clearHistory,
+                            filterMenuPresentationChanged: onCursorPanelFilterMenuPresentationChanged,
+                            clearConfirmationChanged: onCursorPanelClearConfirmationChanged,
+                            showsCoachMark: activeCoachMark == .cursorPanelControls,
+                            onDismissCoachMark: { dismissCoachMark(.cursorPanelControls) }
+                        )
+                        .padding(
+                            .leading,
+                            coachMarkLeading(in: proxy.size.width)
+                        )
+                    }
                 }
             }
             .overlay(alignment: .topLeading) {
                 if usesTransparentBackground, activeCoachMark == .rowGestures {
-                    FeatureTipBubble(
-                        lines: [
-                            "Drag across the text of several clips to select them all, then paste as one block.",
-                            "Swipe a clip sideways to delete it.",
-                        ],
-                        onDismiss: { dismissCoachMark(.rowGestures) }
-                    )
-                    .padding(.leading, StatusItemController.cursorScrollBarWidth
-                        + StatusItemController.cursorScrollBarSpacing
-                        + StatusItemController.cursorPanelPadding)
-                    .padding(.top, StatusItemController.cursorWindowControlAreaHeight
-                        + StatusItemController.cursorWindowControlSpacing
-                        + StatusItemController.cursorPanelPadding
-                        + StatusItemController.cursorFirstRowCenterFromTop
-                        - 10)
+                    GeometryReader { proxy in
+                        FeatureTipBubble(
+                            lines: Self.rowCoachMarkLines[rowCoachMarkStep],
+                            arrowOffsetX: CoachMarkStyle.cardSize.width / 2,
+                            stepIndex: rowCoachMarkStep,
+                            stepCount: Self.rowCoachMarkLines.count,
+                            onNext: advanceRowCoachMark
+                        )
+                        .id(rowCoachMarkStep)
+                        .padding(
+                            .leading,
+                            coachMarkLeading(in: proxy.size.width)
+                        )
+                        .padding(
+                            .top,
+                            StatusItemController.cursorWindowControlAreaHeight + 8
+                        )
+                    }
                 }
             }
+        }
+    }
+
+    private func coachMarkLeading(in availableWidth: CGFloat) -> CGFloat {
+        let panelLeading = StatusItemController.cursorScrollBarWidth
+            + StatusItemController.cursorScrollBarSpacing
+        let panelTrailing = StatusItemController.cursorBulkPasteRailSpacing
+            + StatusItemController.cursorBulkPasteRailWidth
+        let panelWidth = max(
+            availableWidth - panelLeading - panelTrailing,
+            CoachMarkStyle.cardSize.width
+        )
+        return panelLeading
+            + (panelWidth - CoachMarkStyle.cardSize.width) / 2
+    }
+
+    /// Reserves transparent space above the history surface while a tip is
+    /// shown, keeping its bubble outside the panel instead of over its rows.
+    private var topAccessoryHeight: CGFloat {
+        switch activeCoachMark {
+        case .cursorPanelControls:
+            Self.controlCoachMarkClearanceHeight
+        case .rowGestures:
+            Self.rowCoachMarkClearanceHeight
+        case nil:
+            StatusItemController.cursorWindowControlAreaHeight
         }
     }
 

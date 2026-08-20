@@ -58,40 +58,18 @@ struct PreferencesView: View {
                     }
 
                     if !pasteAutomationController.isPostEventAuthorized {
-                        HStack(spacing: 12) {
-                            Button("Give Access") {
-                                Task {
-                                    await pasteAutomationController.requestAuthorization()
-                                }
-                            }
-                            .disabled(
-                                pasteAutomationController.permissionRequestState == .requesting
-                            )
-
-                            if pasteAutomationController.permissionRequestState == .requesting {
-                                ProgressView()
-                                    .controlSize(.small)
-                                Text("Requesting permission…")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                        Button("Open System Settings") {
+                            Task {
+                                await pasteAutomationController.requestAuthorization()
                             }
                         }
+                        .disabled(pasteAutomationController.permissionRequestState == .requesting)
 
-                        if pasteAutomationController.permissionRequestState == .awaitingSystemApproval {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("Waiting for macOS approval. Use the system permission alert; do not add PasteList manually.")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-
-                                Button("Open System Settings") {
-                                    pasteAutomationController.openPostEventSettings()
-                                }
-                                .buttonStyle(.link)
-                                .font(.caption)
-                            }
-                        }
+                        Text("Make sure \(AppConfiguration.name) is listed and turned on in Privacy & Security › Accessibility.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                    Text("PasteList only sends ⌘V after you select an item. Without permission, the item stays copied and you can press ⌘V yourself.")
+                    Text("\(AppConfiguration.name) only sends ⌘V after you select an item. Without permission, the item stays copied and you can press ⌘V yourself.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -110,7 +88,7 @@ struct PreferencesView: View {
             preferenceSection(.startup) {
                 Section("Startup") {
                     Toggle(
-                        "Launch PasteList at login",
+                        "Launch \(AppConfiguration.name) at login",
                         isOn: Binding(
                             get: { launchAtLoginController.isEnabled },
                             set: { launchAtLoginController.setEnabled($0) }

@@ -33,7 +33,7 @@ Scripts/package-dmg.sh /path/to/Release/PasteList.app
 
 ### Accessibility / Apple Events permissions during development
 
-The shared Xcode scheme re-signs Debug builds with the first valid Apple Development identity in the login keychain, giving the build a stable code requirement so macOS retains Accessibility access across recompiles. If multiple valid identities exist, set `PASTELIST_SIGNING_IDENTITY` to the desired certificate name or SHA-1 hash. After switching from an older ad-hoc build, reset the stale permission once with `tccutil reset Accessibility com.kam.pastelist`, then re-grant access in System Settings.
+Debug builds use the app name `PasteDebug` and bundle identifier `com.kam.pastelist.debug`, keeping their TCC record, app data, and reset commands isolated from the Release/TestFlight identifier `com.kam.pastelist`. After switching from an older Debug build, reset the stale permission once with `tccutil reset Accessibility com.kam.pastelist.debug`, then grant PasteDebug access from the first onboarding page.
 
 `SMAppService.mainApp` (Launch at Login) only registers reliably when the app runs from a stable path such as `/Applications/PasteList.app` — registration from Xcode's DerivedData is unreliable.
 
@@ -69,7 +69,7 @@ The only SwiftUI `Scene` is a hidden `Settings {}` scene used to host preference
 
 ### Paste-back automation
 
-Restoring a clip copies it to the pasteboard, then `PasteAutomationController` tries to actually paste it into whatever app was frontmost before the panel opened, by synthesizing a ⌘V `CGEvent`. This requires the macOS "Accessibility"/PostEvent permission and is deliberately defensive: it verifies the permission by posting synthetic no-op events and checking WindowServer's event counters (`verifyPostEventDelivery`) rather than trusting `CGPreflightPostEventAccess()` alone, because that preflight can be stale on macOS 26. If automation isn't authorized or the target app isn't actually frontmost by the time it fires, it falls back to `.copiedForManualPaste` and `PasteFallbackPanelController` tells the user to paste manually — automation failure must never lose the copied content.
+Restoring a clip copies it to the pasteboard, then `PasteAutomationController` tries to paste it into the app that was frontmost before the panel opened. Permission state comes from `AXIsProcessTrustedWithOptions` with prompting disabled; only an explicit onboarding, Settings, or contextual permission action calls `CGRequestPostEventAccess` and opens System Settings. Authorized paste posts an explicit Command-down, V-down/up, Command-up sequence at the HID event tap. If permission is missing, the clip remains copied and a dedicated permission panel is shown; focus or posting failures fall back to a manual ⌘V instruction. Permission UI polls once per second and normal background polling remains infrequent.
 
 ### Global hotkey
 

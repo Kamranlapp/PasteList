@@ -30,19 +30,37 @@ Dependencies are resolved automatically through Swift Package Manager.
 
 ## Accessibility access during development
 
-The shared Xcode scheme re-signs Debug builds with the first valid Apple
-Development identity in the login keychain. This gives the build a stable code
-requirement, so macOS keeps Accessibility access after recompilation. If more
-than one valid identity exists, set `PASTELIST_SIGNING_IDENTITY` to the desired
-certificate name or SHA-1 hash.
+Debug builds run as `PasteDebug` with the separate bundle identifier
+`com.kam.pastelist.debug`. This keeps their Accessibility permission, app data,
+and reset commands isolated from an installed App Store or TestFlight build.
 
-After switching from an older ad-hoc build, reset its stale permission once:
+For Accessibility testing, build and launch the single stable Debug bundle:
 
 ```sh
-tccutil reset Accessibility com.kam.pastelist
+Scripts/run-stable-debug.sh
 ```
 
-Then run PasteList from Xcode and grant it access in System Settings.
+The script installs the current build at `/Applications/PasteDebug.app`, keeps
+its Apple Development identity stable, and unregisters temporary DerivedData
+copies from LaunchServices without deleting build artifacts or resetting TCC.
+Grant this canonical app access on the first onboarding page. The app follows
+Pastebot's public-API flow: request PostEvent access, open the Accessibility
+pane immediately, and poll the authoritative AX trust state once per second
+while the permission UI is visible.
+
+The Debug status menu has two separate reset actions:
+
+- **Reset Accessibility** removes only the Debug app's Accessibility decision,
+  resets onboarding/tips, and relaunches the same canonical app. Clipboard
+  history and other settings are preserved.
+- **Reset to First Launch** additionally removes Debug preferences, clipboard
+  history, blobs, and Launch at Login registration.
+
+Because the app itself is sandboxed, both actions open a short-lived, visible
+Terminal command that runs
+`tccutil reset Accessibility com.kam.pastelist.debug`. Local data is changed
+only after that command succeeds and relaunches the canonical app. If macOS
+rejects the reset, the app is reopened without deleting local data.
 
 ## Launch at Login
 

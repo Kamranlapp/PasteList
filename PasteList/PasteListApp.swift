@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 import SwiftUI
 
 @MainActor
@@ -12,6 +13,10 @@ final class AppServices: ObservableObject {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private enum DefaultsKey {
+        static let welcomeClipSeeded = "onboarding.welcomeClipSeeded"
+    }
+
     let services = AppServices()
     private(set) var database: AppDatabase?
     private(set) var blobStorage: BlobStorage?
@@ -32,6 +37,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else {
             return
         }
+
+        #if DEBUG
+        let debugResetAction = DebugResetRelaunchAction(
+            arguments: ProcessInfo.processInfo.arguments
+        )
+        if debugResetAction == .firstLaunch {
+            try? SMAppService.mainApp.unregister()
+            UserDefaults.standard.removePersistentDomain(forName: AppConfiguration.bundleIdentifier)
+            if let paths = try? AppPaths() {
+                try? FileManager.default.removeItem(at: paths.applicationSupportDirectory)
+            }
+        }
+        #endif
 
         do {
             let paths = try AppPaths()
@@ -70,6 +88,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let preferencesWindowController = PreferencesWindowController(services: services)
             self.preferencesWindowController = preferencesWindowController
             let featureTipsState = FeatureTipsState()
+            #if DEBUG
+            if debugResetAction == .accessibility {
+                onboardingState.reset()
+                featureTipsState.resetAll()
+            }
+            #endif
             let statusItemController = StatusItemController(
                 repository: repository,
                 blobStorage: blobStorage,
@@ -105,6 +129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             #endif
             retentionScheduler.start()
             monitor.start()
+            seedWelcomeClipIfNeeded(onboardingState: onboardingState, monitor: monitor)
             onboardingWindowController.showIfNeeded()
         } catch {
             NSLog("PasteList failed to initialize its database: %@", String(describing: error))
@@ -115,6 +140,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         pasteboardMonitor?.stop()
         retentionScheduler?.stop()
+    }
+
+    private func seedWelcomeClipIfNeeded(
+        onboardingState: OnboardingState,
+        monitor: PasteboardMonitor
+    ) {
+        guard
+            onboardingState.shouldPresentOnLaunch,
+            !UserDefaults.standard.bool(forKey: DefaultsKey.welcomeClipSeeded)
+        else {
+            return
+        }
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        guard pasteboard.setString("Welcome to PasteList", forType: .string) else {
+            return
+        }
+
+        UserDefaults.standard.set(true, forKey: DefaultsKey.welcomeClipSeeded)
+        _ = monitor.checkForChanges()
     }
 }
 

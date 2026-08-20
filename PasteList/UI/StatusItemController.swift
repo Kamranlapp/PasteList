@@ -1,4 +1,6 @@
 import AppKit
+import Foundation
+import ServiceManagement
 import SwiftUI
 
 @MainActor
@@ -115,7 +117,7 @@ final class StatusItemController: NSObject {
         self.appReviewRequestController = appReviewRequestController
         self.onOpenSettings = onOpenSettings
         pasteFallbackPanel = PasteFallbackPanelController(
-            openSettings: onOpenSettings
+            pasteAutomationController: pasteAutomationController
         )
         super.init()
 
@@ -151,7 +153,7 @@ final class StatusItemController: NSObject {
         actionsPopover.behavior = .transient
         actionsPopover.animates = true
         #if DEBUG
-        actionsPopover.contentSize = NSSize(width: 220, height: 130)
+        actionsPopover.contentSize = NSSize(width: 240, height: 242)
         #else
         actionsPopover.contentSize = NSSize(width: 220, height: 92)
         #endif
@@ -164,6 +166,15 @@ final class StatusItemController: NSObject {
                 },
                 quit: {
                     NSApp.terminate(nil)
+                },
+                restart: { [weak self] in
+                    self?.restartApplication()
+                },
+                resetAccessibility: { [weak self] in
+                    self?.resetAccessibilityPermission()
+                },
+                resetToFirstLaunch: { [weak self] in
+                    self?.resetToFirstLaunch()
                 },
                 resetOnboarding: { [weak self] in
                     self?.actionsPopover.performClose(nil)
@@ -185,6 +196,87 @@ final class StatusItemController: NSObject {
         )
         #endif
     }
+
+    #if DEBUG
+    private func restartApplication() {
+        actionsPopover.performClose(nil)
+        let relauncher = Process()
+        relauncher.executableURL = URL(fileURLWithPath: "/bin/sh")
+        relauncher.arguments = [
+            "-c",
+            "sleep 1; /usr/bin/open \"$1\"",
+            "PasteList restart",
+            Bundle.main.bundlePath,
+        ]
+
+        do {
+            try relauncher.run()
+            NSApp.terminate(nil)
+        } catch {
+            NSLog("PasteList could not restart: %@", String(describing: error))
+        }
+    }
+
+    private func resetAccessibilityPermission() {
+        actionsPopover.performClose(nil)
+        launchAccessibilityResetHelper(relaunchAction: .accessibility)
+    }
+
+    private func resetToFirstLaunch() {
+        actionsPopover.performClose(nil)
+        launchAccessibilityResetHelper(relaunchAction: .firstLaunch)
+    }
+
+    private func launchAccessibilityResetHelper(
+        relaunchAction: DebugResetRelaunchAction
+    ) {
+        let scriptURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PasteDebug-reset-\(UUID().uuidString).command")
+        let script = DebugAccessibilityResetScript.contents(
+            bundleIdentifier: AppConfiguration.bundleIdentifier,
+            appPath: Bundle.main.bundlePath,
+            relaunchAction: relaunchAction
+        )
+
+        do {
+            try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o700],
+                ofItemAtPath: scriptURL.path
+            )
+        } catch {
+            showAccessibilityResetFailure(error: error)
+            return
+        }
+
+        let terminalURL = URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app")
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.open(
+            [scriptURL],
+            withApplicationAt: terminalURL,
+            configuration: configuration
+        ) { [weak self] application, error in
+            Task { @MainActor in
+                guard error == nil, application != nil else {
+                    try? FileManager.default.removeItem(at: scriptURL)
+                    self?.showAccessibilityResetFailure(error: error)
+                    return
+                }
+                NSApp.terminate(nil)
+            }
+        }
+    }
+
+    private func showAccessibilityResetFailure(error: Error?) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Could not start the Accessibility reset"
+        alert.informativeText = "\(error?.localizedDescription ?? "Terminal could not be opened.") No app data was removed."
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+    #endif
 
     private func configureCursorPanel(blobStorage: BlobStorage) {
         cursorPanel.isReleasedWhenClosed = false
@@ -424,8 +516,13 @@ final class StatusItemController: NSObject {
                 return
             }
             let result = await pasteAutomationController.pasteIntoPreviousApplication()
-            if result == .copiedForManualPaste {
-                pasteFallbackPanel.show()
+            switch result {
+            case .pastedAutomatically:
+                break
+            case .permissionRequired:
+                pasteFallbackPanel.showPermissionRequired()
+            case .copiedForManualPaste:
+                pasteFallbackPanel.showManualPaste()
             }
             if shouldRequestReview, let viewController = cursorPanel.contentViewController {
                 await appReviewRequestController.performPendingRequest(
@@ -700,6 +797,9 @@ private struct StatusActionsView: View {
     let openSettings: () -> Void
     let quit: () -> Void
     #if DEBUG
+    let restart: () -> Void
+    let resetAccessibility: () -> Void
+    let resetToFirstLaunch: () -> Void
     let resetOnboarding: () -> Void
     #endif
 
@@ -708,6 +808,9 @@ private struct StatusActionsView: View {
             actionButton("Settings…", systemImage: "gearshape", action: openSettings)
             #if DEBUG
             Divider()
+            actionButton("Restart \(AppConfiguration.name)", systemImage: "arrow.clockwise", action: restart)
+            actionButton("Reset Accessibility", systemImage: "hand.raised", action: resetAccessibility)
+            actionButton("Reset to First Launch", systemImage: "trash", action: resetToFirstLaunch)
             actionButton("Reset Onboarding", systemImage: "arrow.counterclockwise", action: resetOnboarding)
             #endif
             Divider()

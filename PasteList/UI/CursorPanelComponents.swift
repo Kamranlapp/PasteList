@@ -21,7 +21,15 @@ struct CursorPanelControls: View {
     @State private var showsClearConfirmation = false
     @State private var coachMarkStep = 0
 
-    private static let coachMarkControls: [Control] = [.pin, .resize, .saved, .plainText]
+    private static let coachMarkControls: [Control] = [
+        .pin,
+        .move,
+        .resize,
+        .saved,
+        .plainText,
+    ]
+    private static let controlsLeading: CGFloat = 10
+    private static let coachMarkLeading: CGFloat = 0
 
     private enum Control: String {
         case pin = "Pin"
@@ -41,7 +49,56 @@ struct CursorPanelControls: View {
                 }
             }
 
-            HStack(spacing: 8) {
+            controlsRow
+                .padding(.leading, Self.controlsLeading)
+                .padding(.top, StatusItemController.cursorWindowTooltipHeight)
+            .opacity(isHovering || isFilterMenuPresented || showsClearConfirmation || showsCoachMark ? 1 : 0)
+            .allowsHitTesting(isHovering || isFilterMenuPresented || showsClearConfirmation || showsCoachMark)
+
+            if showsCoachMark {
+                let control = Self.coachMarkControls[coachMarkStep]
+                FeatureTipArrowBubble(
+                    lines: coachMarkLines(for: control),
+                    arrowOffsetX: centerX(for: control)
+                        + Self.controlsLeading
+                        - Self.coachMarkLeading,
+                    stepIndex: coachMarkStep,
+                    stepCount: Self.coachMarkControls.count,
+                    onNext: advanceCoachMark
+                )
+                .id(control)
+                .padding(.leading, Self.coachMarkLeading)
+                .padding(
+                    .top,
+                    StatusItemController.cursorWindowTooltipHeight
+                        + StatusItemController.cursorWindowControlDiameter
+                        + 8
+                )
+            }
+        }
+        .onChange(of: showsCoachMark) { isShowing in
+            if isShowing {
+                coachMarkStep = 0
+            }
+        }
+        .frame(
+            width: CoachMarkStyle.cardSize.width,
+            height: showsCoachMark ? 170 : 92,
+            alignment: .topLeading
+        )
+        .alert("Clear Clipboard History?", isPresented: clearConfirmationBinding) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive, action: clearHistory)
+        } message: {
+            Text(
+                "All clips, including pinned clips, will be permanently deleted. "
+                    + "This action cannot be undone."
+            )
+        }
+    }
+
+    private var controlsRow: some View {
+        HStack(spacing: 8) {
                 Button {
                     isPinned.toggle()
                     pinChanged(isPinned)
@@ -53,6 +110,7 @@ struct CursorPanelControls: View {
                 }
                 .buttonStyle(.plain)
                 .overlay(alignment: .top) { tooltip(for: .pin) }
+                .overlay { coachMarkHighlight(for: .pin) }
                 .onHover { setHoveredControl(.pin, isInside: $0) }
 
                 ZStack {
@@ -64,6 +122,7 @@ struct CursorPanelControls: View {
                 }
                 .frame(width: 24, height: 24)
                 .overlay(alignment: .top) { tooltip(for: .move) }
+                .overlay { coachMarkHighlight(for: .move) }
                 .onHover { setHoveredControl(.move, isInside: $0) }
 
                 Button {
@@ -77,6 +136,7 @@ struct CursorPanelControls: View {
                 }
                 .buttonStyle(.plain)
                 .overlay(alignment: .top) { tooltip(for: .resize) }
+                .overlay { coachMarkHighlight(for: .resize) }
                 .onHover { setHoveredControl(.resize, isInside: $0) }
 
                 Button {
@@ -92,6 +152,7 @@ struct CursorPanelControls: View {
                 }
                 .buttonStyle(.plain)
                 .overlay(alignment: .top) { tooltip(for: .saved) }
+                .overlay { coachMarkHighlight(for: .saved) }
                 .onHover { setHoveredControl(.saved, isInside: $0) }
 
                 Button {
@@ -104,6 +165,7 @@ struct CursorPanelControls: View {
                 }
                 .buttonStyle(.plain)
                 .overlay(alignment: .top) { tooltip(for: .plainText) }
+                .overlay { coachMarkHighlight(for: .plainText) }
                 .onHover { setHoveredControl(.plainText, isInside: $0) }
 
                 ZStack {
@@ -137,45 +199,6 @@ struct CursorPanelControls: View {
                 .buttonStyle(.plain)
                 .overlay(alignment: .top) { tooltip(for: .clear) }
                 .onHover { setHoveredControl(.clear, isInside: $0) }
-            }
-            .padding(.leading, 16)
-            .padding(.top, StatusItemController.cursorWindowTooltipHeight)
-            .opacity(isHovering || isFilterMenuPresented || showsClearConfirmation || showsCoachMark ? 1 : 0)
-            .allowsHitTesting(isHovering || isFilterMenuPresented || showsClearConfirmation || showsCoachMark)
-
-            if showsCoachMark {
-                let control = Self.coachMarkControls[coachMarkStep]
-                FeatureTipArrowBubble(
-                    text: coachMarkText(for: control),
-                    arrowOffsetX: centerX(for: control),
-                    stepIndex: coachMarkStep,
-                    stepCount: Self.coachMarkControls.count,
-                    onNext: advanceCoachMark
-                )
-                .id(control)
-                .padding(.leading, 16)
-                .padding(
-                    .top,
-                    StatusItemController.cursorWindowTooltipHeight
-                        + StatusItemController.cursorWindowControlDiameter
-                        + 10
-                )
-            }
-        }
-        .onChange(of: showsCoachMark) { isShowing in
-            if isShowing {
-                coachMarkStep = 0
-            }
-        }
-        .frame(width: 250, height: 92, alignment: .topLeading)
-        .alert("Clear Clipboard History?", isPresented: clearConfirmationBinding) {
-            Button("Cancel", role: .cancel) {}
-            Button("Delete", role: .destructive, action: clearHistory)
-        } message: {
-            Text(
-                "All clips, including pinned clips, will be permanently deleted. "
-                    + "This action cannot be undone."
-            )
         }
     }
 
@@ -230,6 +253,16 @@ struct CursorPanelControls: View {
         }
     }
 
+    @ViewBuilder
+    private func coachMarkHighlight(for control: Control) -> some View {
+        if showsCoachMark, Self.coachMarkControls[coachMarkStep] == control {
+            Circle()
+                .stroke(Color.accentColor, lineWidth: 2)
+                .padding(-3)
+                .allowsHitTesting(false)
+        }
+    }
+
     private func advanceCoachMark() {
         let isLastStep = coachMarkStep >= Self.coachMarkControls.count - 1
         withAnimation(.easeInOut(duration: 0.18)) {
@@ -241,18 +274,36 @@ struct CursorPanelControls: View {
         }
     }
 
-    private func coachMarkText(for control: Control) -> String {
+    private func coachMarkLines(for control: Control) -> [String] {
         switch control {
         case .pin:
-            "Pin keeps a clip so it won't be cleared automatically."
+            [
+                "Pin",
+                "Keeps PasteList above other windows.",
+            ]
+        case .move:
+            [
+                "Move",
+                "Drag & drop to move the free or pinned panel.",
+            ]
         case .resize:
-            "Resize by dragging to change the panel's size."
+            [
+                "Resize",
+                "Drag the corner to change the panel's size.",
+            ]
         case .saved:
-            "Saved opens your saved clips list."
+            [
+                "Saved",
+                "Opens your saved clips list.",
+                "Right click on clip to Save",
+            ]
         case .plainText:
-            "Plain text pastes without formatting."
+            [
+                "Paste as Plain text",
+                "When on, text formatting is removed.",
+            ]
         default:
-            ""
+            []
         }
     }
 

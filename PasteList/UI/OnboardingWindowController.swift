@@ -64,8 +64,6 @@ private struct OnboardingView: View {
     let onFinish: () -> Void
 
     @State private var page = 0
-    @State private var isAwaitingPulse = false
-
     private let pageCount = 2
 
     var body: some View {
@@ -91,22 +89,37 @@ private struct OnboardingView: View {
                     }
                     .fixedSize()
                 }
-                Button(page == pageCount - 1 ? "Start Using \(AppConfiguration.name)" : "Continue") {
+                Button {
                     if page == pageCount - 1 {
                         state.complete()
                         onFinish()
                     } else {
                         page += 1
                     }
+                } label: {
+                    Text(page == pageCount - 1 ? "Start Using \(AppConfiguration.name)" : "Continue")
+                        .fixedSize()
                 }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+                .fixedSize(horizontal: true, vertical: true)
+                .focusable(false)
                 .keyboardShortcut(.defaultAction)
-                .fixedSize()
             }
             .padding(20)
         }
         .frame(width: 640, height: 480)
         .onAppear {
-            pasteAutomationController.refreshAuthorization()
+            pasteAutomationController.setAuthorizationSurface(
+                .onboarding,
+                visible: true
+            )
+        }
+        .onDisappear {
+            pasteAutomationController.setAuthorizationSurface(
+                .onboarding,
+                visible: false
+            )
         }
         .onChange(of: pasteAutomationController.isPostEventAuthorized) { isAuthorized in
             guard isAuthorized, page == 0 else { return }
@@ -114,17 +127,6 @@ private struct OnboardingView: View {
                 try? await Task.sleep(nanoseconds: 650_000_000)
                 withAnimation {
                     page = 1
-                }
-            }
-        }
-        .onChange(of: pasteAutomationController.permissionRequestState) { newState in
-            if newState == .awaitingSystemApproval {
-                withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
-                    isAwaitingPulse = true
-                }
-            } else {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    isAwaitingPulse = false
                 }
             }
         }
@@ -137,33 +139,24 @@ private struct OnboardingView: View {
                 : "accessibility")
                 .font(.system(size: 64, weight: .medium))
                 .foregroundStyle(pasteAutomationController.isPostEventAuthorized ? Color.green : Color.accentColor)
-                .scaleEffect(isAwaitingPulse ? 1.08 : 1.0)
-            Text("Let PasteList paste for you")
+            Text("Let \(AppConfiguration.name) paste for you")
                 .font(.system(size: 30, weight: .semibold))
 
             if pasteAutomationController.isPostEventAuthorized {
                 Label("Automatic paste permission granted", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
             } else {
-                HStack(spacing: 12) {
-                    Button("Give Access") {
-                        Task {
-                            await pasteAutomationController.requestAuthorization()
-                        }
-                    }
-                    .disabled(
-                        pasteAutomationController.permissionRequestState == .requesting
-                    )
-
-                    if pasteAutomationController.permissionRequestState == .requesting
-                        || pasteAutomationController.permissionRequestState == .awaitingSystemApproval {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Waiting for approval…")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                Button("Open System Settings") {
+                    Task {
+                        await pasteAutomationController.requestAuthorization()
                     }
                 }
+                .disabled(pasteAutomationController.permissionRequestState == .requesting)
+
+                Text("Make sure \(AppConfiguration.name) is listed and turned on in Privacy & Security › Accessibility.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
             }
 
             Text("You can skip this and paste manually with ⌘V.")
@@ -194,7 +187,7 @@ private struct OnboardingView: View {
                     .foregroundStyle(.red)
             }
 
-            Text("Press this shortcut to open PasteList at the pointer. Click the field above to record a different one — you can also change it later in Settings.")
+            Text("Press this shortcut to open \(AppConfiguration.name) at the pointer. Click the field above to record a different one — you can also change it later in Settings.")
                 .font(.title3)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
