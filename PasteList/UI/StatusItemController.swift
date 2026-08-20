@@ -88,7 +88,7 @@ final class StatusItemController: NSObject {
         let initialCursorPanelSize = Self.storedCursorPanelSize()
         cursorPanel = CursorHistoryPanel(
             contentRect: NSRect(origin: .zero, size: initialCursorPanelSize),
-            styleMask: [.borderless, .fullSizeContentView],
+            styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
@@ -384,7 +384,6 @@ final class StatusItemController: NSObject {
             ),
             display: true
         )
-        NSApp.activate(ignoringOtherApps: true)
         cursorPanelFadeGeneration += 1
         isCursorPanelFadingOut = false
         cursorPanel.alphaValue = 0

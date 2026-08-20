@@ -46,6 +46,8 @@ done
 launch_services="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 timestamp="$(/bin/date '+%Y-%m-%d_%H-%M-%S')"
 trash_root="$HOME/.Trash/PasteList-clean-reset-$timestamp"
+cleanup_incomplete=false
+manual_cleanup_paths=()
 
 bundle_identifiers=(
     "com.kam.pastelist"
@@ -74,8 +76,17 @@ move_to_reset_folder() {
     local label="$2"
 
     [[ -e "$source_path" || -L "$source_path" ]] || return 0
-    run /bin/mkdir -p "$trash_root"
-    run /bin/mv "$source_path" "$trash_root/$label"
+    if ! run /bin/mkdir -p "$trash_root"; then
+        echo "warning: Could not create the reset folder in Trash." >&2
+        cleanup_incomplete=true
+        manual_cleanup_paths+=("$source_path")
+        return 0
+    fi
+    if ! run /bin/mv "$source_path" "$trash_root/$label"; then
+        echo "warning: macOS protected $source_path; move it to Trash with Finder." >&2
+        cleanup_incomplete=true
+        manual_cleanup_paths+=("$source_path")
+    fi
 }
 
 echo "This will reset both PasteList identities and move their local data to:"
@@ -141,10 +152,6 @@ for bundle_identifier in "${bundle_identifiers[@]}"; do
     move_to_reset_folder "$HOME/Library/HTTPStorages/$bundle_identifier" "http-storage-$bundle_identifier"
 done
 
-if ! $dry_run; then
-    /usr/bin/killall cfprefsd >/dev/null 2>&1 || true
-fi
-
 echo
 echo "Clean-install reset complete."
 if [[ -d "$trash_root" ]] || $dry_run; then
@@ -154,3 +161,10 @@ fi
 echo "Reinstall PasteList, then use its onboarding button to request Accessibility again."
 echo "Note: macOS decides whether authorization uses Touch ID or a password."
 echo "Note: the current app build seeds a 'Welcome to PasteList' history item on first launch."
+
+if $cleanup_incomplete; then
+    echo >&2
+    echo "Manual Finder cleanup is still required for:" >&2
+    printf '  %s\n' "${manual_cleanup_paths[@]}" >&2
+    exit 1
+fi

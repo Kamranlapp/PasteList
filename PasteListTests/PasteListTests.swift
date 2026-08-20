@@ -91,7 +91,7 @@ final class PasteListTests: XCTestCase {
     func testCursorPanelInterceptsQuickPasteBeforeFocusedSearchField() throws {
         let panel = CursorHistoryPanel(
             contentRect: NSRect(x: 0, y: 0, width: 300, height: 400),
-            styleMask: [.borderless],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )

@@ -46,6 +46,9 @@ struct SavedClipsView: View {
             .task(id: hoveredClipID) {
                 await updateImagePreview()
             }
+            .onDisappear {
+                onImagePreviewChanged(nil)
+            }
     }
 
     @ViewBuilder
@@ -189,4 +192,5 @@ struct SavedClipsView: View {
         }
         onImagePreviewChanged(clipID)
     }
+
 }

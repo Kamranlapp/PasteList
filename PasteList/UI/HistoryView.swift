@@ -299,9 +299,6 @@ struct HistoryView: View {
             }
     }
 
-    /// Shows the hover preview only once the pointer has rested on an image row.
-    /// SwiftUI cancels and restarts this task whenever `hoveredClipID` changes,
-    /// so leaving a row hides the preview without any manual bookkeeping.
     private func updateImagePreview() async {
         guard
             let clipID = hoveredClipID,

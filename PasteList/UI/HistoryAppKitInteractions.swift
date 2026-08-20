@@ -193,7 +193,6 @@ final class TextSelectionSourceNSView: NSView {
         self.onSelectionChanged = onSelectionChanged
         self.onSelectionFinished = onSelectionFinished
         super.init(frame: .zero)
-        toolTip = "Click to paste\nDrag vertically to select\nDrag left to delete"
     }
 
     @available(*, unavailable)
@@ -358,7 +357,6 @@ final class FileDragSourceNSView: NSView, NSDraggingSource {
         self.onDelete = onDelete
         self.onSwipeChanged = onSwipeChanged
         super.init(frame: .zero)
-        toolTip = "Drag to another app\nDrag left to delete"
     }
 
     @available(*, unavailable)
@@ -514,7 +512,6 @@ final class MouseSwipeActionNSView: NSView {
         self.onDelete = onDelete
         self.onSwipeChanged = onSwipeChanged
         super.init(frame: .zero)
-        toolTip = "Click to paste\nDrag left to delete"
     }
 
     @available(*, unavailable)
