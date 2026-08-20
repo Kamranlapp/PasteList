@@ -62,6 +62,20 @@ Terminal command that runs
 only after that command succeeds and relaunches the canonical app. If macOS
 rejects the reset, the app is reopened without deleting local data.
 
+To prepare the Mac for a complete installation-from-scratch recording, reset
+both the Debug and App Store identities with:
+
+```sh
+Scripts/reset-clean-install.sh
+```
+
+The script stops both app variants, resets their Accessibility-related TCC
+decisions, unregisters installed copies, and moves their preferences, clipboard
+database, blobs, caches, and installed bundles into one timestamped folder in
+the Trash. It deliberately preserves the repository, Xcode Archives, and
+DerivedData. Preview the exact actions without changing anything with
+`Scripts/reset-clean-install.sh --dry-run`.
+
 ## Launch at Login
 
 PasteList uses `SMAppService.mainApp` on macOS 13 and later. Move the built app to
