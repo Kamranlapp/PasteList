@@ -30,7 +30,6 @@
 		100000000000000000000022 /* ClipRestorer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000022 /* ClipRestorer.swift */; };
 		100000000000000000000023 /* ClipRestorerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000023 /* ClipRestorerTests.swift */; };
 		100000000000000000000024 /* PasteAutomationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000024 /* PasteAutomationController.swift */; };
-		10000000000000000000003F /* PasteFallbackPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000003F /* PasteFallbackPanelController.swift */; };
 		100000000000000000000025 /* GlobalHotKeyController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000025 /* GlobalHotKeyController.swift */; };
 		100000000000000000000026 /* PreferencesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000026 /* PreferencesView.swift */; };
 		100000000000000000000027 /* LaunchAtLoginController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000027 /* LaunchAtLoginController.swift */; };
@@ -51,6 +50,7 @@
 		10000000000000000000003C /* OnboardingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000003C /* OnboardingState.swift */; };
 		10000000000000000000003D /* OnboardingWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000003D /* OnboardingWindowController.swift */; };
 		10000000000000000000003E /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000003E /* PrivacyInfo.xcprivacy */; };
+		10000000000000000000003F /* PasteFallbackPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000003F /* PasteFallbackPanelController.swift */; };
 		100000000000000000000040 /* AppReviewRequestController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000040 /* AppReviewRequestController.swift */; };
 		100000000000000000000041 /* AppReviewRequestControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000041 /* AppReviewRequestControllerTests.swift */; };
 		100000000000000000000042 /* FeatureTipsState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000042 /* FeatureTipsState.swift */; };
@@ -73,7 +73,7 @@
 		200000000000000000000002 /* AppConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfiguration.swift; sourceTree = "<group>"; };
 		200000000000000000000003 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		200000000000000000000004 /* PasteListTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasteListTests.swift; sourceTree = "<group>"; };
-		200000000000000000000005 /* PasteList.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PasteList.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		200000000000000000000005 /* PasteDebug.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PasteDebug.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		200000000000000000000006 /* PasteListTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PasteListTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		200000000000000000000007 /* AppPaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPaths.swift; sourceTree = "<group>"; };
 		200000000000000000000008 /* ClipRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipRecord.swift; sourceTree = "<group>"; };
@@ -93,7 +93,6 @@
 		200000000000000000000022 /* ClipRestorer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipRestorer.swift; sourceTree = "<group>"; };
 		200000000000000000000023 /* ClipRestorerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipRestorerTests.swift; sourceTree = "<group>"; };
 		200000000000000000000024 /* PasteAutomationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasteAutomationController.swift; sourceTree = "<group>"; };
-		20000000000000000000003F /* PasteFallbackPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasteFallbackPanelController.swift; sourceTree = "<group>"; };
 		200000000000000000000025 /* GlobalHotKeyController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHotKeyController.swift; sourceTree = "<group>"; };
 		200000000000000000000026 /* PreferencesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesView.swift; sourceTree = "<group>"; };
 		200000000000000000000027 /* LaunchAtLoginController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchAtLoginController.swift; sourceTree = "<group>"; };
@@ -113,12 +112,13 @@
 		20000000000000000000003B /* SavedClipsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedClipsView.swift; sourceTree = "<group>"; };
 		20000000000000000000003C /* OnboardingState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingState.swift; sourceTree = "<group>"; };
 		20000000000000000000003D /* OnboardingWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingWindowController.swift; sourceTree = "<group>"; };
+		20000000000000000000003E /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		20000000000000000000003F /* PasteFallbackPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasteFallbackPanelController.swift; sourceTree = "<group>"; };
+		200000000000000000000040 /* AppReviewRequestController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppReviewRequestController.swift; sourceTree = "<group>"; };
+		200000000000000000000041 /* AppReviewRequestControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppReviewRequestControllerTests.swift; sourceTree = "<group>"; };
 		200000000000000000000042 /* FeatureTipsState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureTipsState.swift; sourceTree = "<group>"; };
 		200000000000000000000043 /* FeatureTipBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureTipBubble.swift; sourceTree = "<group>"; };
 		200000000000000000000044 /* FeatureTipArrowBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureTipArrowBubble.swift; sourceTree = "<group>"; };
-		20000000000000000000003E /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		200000000000000000000040 /* AppReviewRequestController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppReviewRequestController.swift; sourceTree = "<group>"; };
-		200000000000000000000041 /* AppReviewRequestControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppReviewRequestControllerTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -187,7 +187,7 @@
 		400000000000000000000005 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				200000000000000000000005 /* PasteList.app */,
+				200000000000000000000005 /* PasteDebug.app */,
 				200000000000000000000006 /* PasteListTests.xctest */,
 			);
 			name = Products;
@@ -281,7 +281,7 @@
 				700000000000000000000002 /* GRDB */,
 			);
 			productName = PasteList;
-			productReference = 200000000000000000000005 /* PasteList.app */;
+			productReference = 200000000000000000000005 /* PasteDebug.app */;
 			productType = "com.apple.product-type.application";
 		};
 		500000000000000000000002 /* PasteListTests */ = {
@@ -478,8 +478,8 @@
 		800000000000000000000003 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = "$(ARCHS_STANDARD)";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ARCHS = arm64;
 				CODE_SIGN_ENTITLEMENTS = PasteList/PasteList.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -506,8 +506,8 @@
 		800000000000000000000004 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = "$(ARCHS_STANDARD)";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ARCHS = arm64;
 				CODE_SIGN_ENTITLEMENTS = PasteList/PasteList.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;

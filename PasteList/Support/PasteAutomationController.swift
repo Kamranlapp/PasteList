@@ -86,12 +86,18 @@ private func verifyPostEventDelivery(using route: EventPostingRoute) async -> Bo
         return false
     }
 
+    // CGEvent expects the CoreGraphics global display coordinate space
+    // (origin top-left), not NSEvent.mouseLocation's AppKit space (origin
+    // bottom-left) — reading the location back from a CGEvent keeps both
+    // in the same space and avoids warping the real cursor on multi-monitor setups.
+    let currentCursorPosition = CGEvent(source: nil)?.location ?? .zero
+
     for _ in 0..<PostEventDeliveryProbe.eventCount {
         guard
             let mouseEvent = CGEvent(
                 mouseEventSource: source,
                 mouseType: .mouseMoved,
-                mouseCursorPosition: NSEvent.mouseLocation,
+                mouseCursorPosition: currentCursorPosition,
                 mouseButton: .left
             ),
             let scrollEvent = CGEvent(
