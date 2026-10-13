@@ -153,7 +153,7 @@ final class StatusItemController: NSObject {
         actionsPopover.behavior = .transient
         actionsPopover.animates = true
         #if DEBUG
-        actionsPopover.contentSize = NSSize(width: 240, height: 242)
+        updateActionsPopoverSize()
         #else
         actionsPopover.contentSize = NSSize(width: 220, height: 92)
         #endif
@@ -198,6 +198,13 @@ final class StatusItemController: NSObject {
     }
 
     #if DEBUG
+    private func updateActionsPopoverSize() {
+        actionsPopover.contentSize = NSSize(
+            width: 240,
+            height: DebugSettings.showsResetButtons() ? 242 : 142
+        )
+    }
+
     private func restartApplication() {
         actionsPopover.performClose(nil)
         let relauncher = Process()
@@ -564,6 +571,9 @@ final class StatusItemController: NSObject {
         }
 
         closeCursorPanel(force: true)
+        #if DEBUG
+        updateActionsPopoverSize()
+        #endif
         guard let button = statusItem.button else {
             return
         }
@@ -815,6 +825,8 @@ private struct StatusActionsView: View {
     let resetAccessibility: () -> Void
     let resetToFirstLaunch: () -> Void
     let resetOnboarding: () -> Void
+    @AppStorage(DebugSettings.showsResetButtonsKey)
+    private var showsResetButtons = true
     #endif
 
     var body: some View {
@@ -823,9 +835,11 @@ private struct StatusActionsView: View {
             #if DEBUG
             Divider()
             actionButton("Restart \(AppConfiguration.name)", systemImage: "arrow.clockwise", action: restart)
-            actionButton("Reset Accessibility", systemImage: "hand.raised", action: resetAccessibility)
-            actionButton("Reset to First Launch", systemImage: "trash", action: resetToFirstLaunch)
-            actionButton("Reset Onboarding", systemImage: "arrow.counterclockwise", action: resetOnboarding)
+            if showsResetButtons {
+                actionButton("Reset Accessibility", systemImage: "hand.raised", action: resetAccessibility)
+                actionButton("Reset to First Launch", systemImage: "trash", action: resetToFirstLaunch)
+                actionButton("Reset Onboarding", systemImage: "arrow.counterclockwise", action: resetOnboarding)
+            }
             #endif
             Divider()
             actionButton("Quit \(AppConfiguration.name)", systemImage: "power", action: quit)

@@ -15,7 +15,8 @@ Modes:
              kind of recovery folder.
 
 Both modes stop PasteList, unregister Launch at Login through SMAppService,
-reset only Accessibility and PostEvent, and clear all local PasteList data.
+reset every TCC record for both bundle identifiers, and clear all local
+PasteList data. Full mode additionally removes the installed apps.
 
 The repository, Xcode Archives, DerivedData, system clipboard, Keychain, and
 other apps' login items are not touched. The Trash is never emptied.
@@ -238,13 +239,12 @@ if ! $installed_app_found; then
     echo "A cleanly reinstalled PasteList will repeat the unregister operation on first launch."
 fi
 
-# Reset only the authorization services PasteList uses for Assistive Paste.
+# Leave no TCC decision behind, including permissions the app may have requested
+# in an older build. This applies to both full and data-only clean resets.
 for bundle_identifier in "${bundle_identifiers[@]}"; do
-    for service in Accessibility PostEvent; do
-        if ! run /usr/bin/tccutil reset "$service" "$bundle_identifier"; then
-            record_failure "Could not reset $service for $bundle_identifier."
-        fi
-    done
+    if ! run /usr/bin/tccutil reset All "$bundle_identifier"; then
+        record_failure "Could not reset all TCC records for $bundle_identifier."
+    fi
     delete_preferences_domain "$bundle_identifier" "$bundle_identifier host"
     delete_preferences_domain \
         "$HOME/Library/Containers/$bundle_identifier/Data/Library/Preferences/$bundle_identifier" \

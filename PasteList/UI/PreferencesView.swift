@@ -7,6 +7,10 @@ struct PreferencesView: View {
     @ObservedObject var pasteAutomationController: PasteAutomationController
     @ObservedObject var launchAtLoginController: LaunchAtLoginController
     let onOpenOnboarding: () -> Void
+    #if DEBUG
+    @AppStorage(DebugSettings.showsResetButtonsKey)
+    private var showsDebugResetButtons = true
+    #endif
 
     var body: some View {
         preferencesSurface
@@ -127,6 +131,14 @@ struct PreferencesView: View {
                         }
                     }
                 }
+
+                #if DEBUG
+                preferenceSection(.debug) {
+                    Section("Debug") {
+                        Toggle("Show Reset Buttons", isOn: $showsDebugResetButtons)
+                    }
+                }
+                #endif
             }
             .formStyle(.grouped)
             .scrollIndicators(.hidden)
@@ -176,6 +188,9 @@ private enum PreferencesSection: Int, CaseIterable, Hashable {
     case historyRetention
     case startup
     case help
+    #if DEBUG
+    case debug
+    #endif
 }
 
 struct PreferencesContainerView: View {

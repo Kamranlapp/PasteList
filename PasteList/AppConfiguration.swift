@@ -13,6 +13,17 @@ enum AppConfiguration {
 }
 
 #if DEBUG
+enum DebugSettings {
+    static let showsResetButtonsKey = "debug.showsResetButtons"
+
+    static func showsResetButtons(in userDefaults: UserDefaults = .standard) -> Bool {
+        guard userDefaults.object(forKey: showsResetButtonsKey) != nil else {
+            return true
+        }
+        return userDefaults.bool(forKey: showsResetButtonsKey)
+    }
+}
+
 enum DebugResetRelaunchAction: String, CaseIterable {
     case accessibility = "--complete-accessibility-reset"
     case firstLaunch = "--complete-first-launch-reset"

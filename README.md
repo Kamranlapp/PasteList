@@ -69,19 +69,20 @@ both the Debug and App Store identities with:
 Scripts/reset-clean-install.sh
 ```
 
-The script stops both app variants, resets their Accessibility-related TCC
-decisions, unregisters installed copies, and moves their preferences, clipboard
-database, blobs, caches, and installed bundles into one timestamped folder in
-the Trash. It deliberately preserves the repository, Xcode Archives, and
-DerivedData. Preview the exact actions without changing anything with
-`Scripts/reset-clean-install.sh --dry-run`.
+The script stops both app variants, resets every TCC record associated with
+their bundle identifiers, unregisters installed copies, and moves their
+preferences, clipboard database, blobs, caches, and installed bundles into one
+timestamped folder in the Trash. It deliberately preserves the repository,
+Xcode Archives, and DerivedData. Preview the exact actions without changing
+anything with `Scripts/reset-clean-install.sh --dry-run`.
 
 The same reset is available as two Finder-launchable files in `Scripts`:
 
 - **Reset PasteList - Full.command** removes the installed PasteList and
   PasteDebug apps together with all of their data.
 - **Reset PasteList - Data Only.command** keeps both installed apps while
-  removing all saved data and authorization decisions.
+  removing all saved data and every TCC decision associated with their bundle
+  identifiers.
 
 Both launchers start their selected reset immediately, unregister PasteList's
 own Launch at Login item, and keep a recoverable copy of removed files in the

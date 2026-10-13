@@ -6,6 +6,22 @@ import XCTest
 @testable import PasteList
 
 final class PasteListTests: XCTestCase {
+    #if DEBUG
+    func testDebugResetButtonsAreVisibleByDefaultAndPersistTheirSetting() {
+        let suiteName = "PasteListTests.debug-reset-buttons.\(UUID().uuidString)"
+        let userDefaults = UserDefaults(suiteName: suiteName)!
+        defer { userDefaults.removePersistentDomain(forName: suiteName) }
+
+        XCTAssertTrue(DebugSettings.showsResetButtons(in: userDefaults))
+
+        userDefaults.set(false, forKey: DebugSettings.showsResetButtonsKey)
+        XCTAssertFalse(DebugSettings.showsResetButtons(in: userDefaults))
+
+        userDefaults.set(true, forKey: DebugSettings.showsResetButtonsKey)
+        XCTAssertTrue(DebugSettings.showsResetButtons(in: userDefaults))
+    }
+    #endif
+
     @MainActor
     func testAccessibilityResetHelperTargetsOnlyDebugAssistivePasteServicesAndDefersLocalReset() {
         let script = DebugAccessibilityResetScript.contents(
@@ -40,15 +56,14 @@ final class PasteListTests: XCTestCase {
 
         XCTAssertTrue(resetScript.contains("com.kam.pastelist"))
         XCTAssertTrue(resetScript.contains("com.kam.pastelist.debug"))
-        XCTAssertTrue(resetScript.contains("tccutil reset \"$service\" \"$bundle_identifier\""))
-        XCTAssertTrue(resetScript.contains("Accessibility PostEvent"))
+        XCTAssertTrue(resetScript.contains("tccutil reset All \"$bundle_identifier\""))
+        XCTAssertFalse(resetScript.contains("tccutil reset \"$service\" \"$bundle_identifier\""))
         XCTAssertTrue(resetScript.contains(LaunchAtLoginResetCommand.argument))
         XCTAssertTrue(
             resetScript.contains(
                 "Data/Library/Preferences/$bundle_identifier"
             )
         )
-        XCTAssertFalse(resetScript.contains("tccutil reset All"))
         XCTAssertFalse(resetScript.contains("ListenEvent"))
         XCTAssertFalse(resetScript.contains("sfltool"))
         XCTAssertFalse(resetScript.contains("sudo"))
