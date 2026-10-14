@@ -23,6 +23,43 @@ final class PasteListTests: XCTestCase {
             ),
             504
         )
+        XCTAssertEqual(
+            RowScrollSnap.targetOrigin(
+                currentOrigin: -12,
+                maximumOrigin: 511,
+                rowHeight: ClipRowStyle.height
+            ),
+            0
+        )
+        XCTAssertEqual(
+            RowScrollSnap.targetOrigin(
+                currentOrigin: 530,
+                maximumOrigin: 511,
+                rowHeight: ClipRowStyle.height
+            ),
+            511
+        )
+        XCTAssertTrue(
+            RowScrollSnap.isNearEdge(
+                currentOrigin: 10,
+                maximumOrigin: 511,
+                rowHeight: ClipRowStyle.height
+            )
+        )
+        XCTAssertTrue(
+            RowScrollSnap.isNearEdge(
+                currentOrigin: 490,
+                maximumOrigin: 511,
+                rowHeight: ClipRowStyle.height
+            )
+        )
+        XCTAssertFalse(
+            RowScrollSnap.isNearEdge(
+                currentOrigin: 220,
+                maximumOrigin: 511,
+                rowHeight: ClipRowStyle.height
+            )
+        )
     }
 
     #if DEBUG
@@ -885,6 +922,48 @@ final class PasteListTests: XCTestCase {
         )
         XCTAssertEqual(resizedFrame.maxX, 400)
         XCTAssertEqual(resizedFrame.maxY, initialFrame.maxY)
+    }
+
+    @MainActor
+    func testCursorPanelResizeSnapsToNearestWholeRow() {
+        let minimumHeight = StatusItemController.cursorPanelMinimumSize.height
+        let lower = CursorPanelResizeSnapper.fixedVerticalChrome
+            + ClipRowStyle.scrollPitch * 6
+        let upper = CursorPanelResizeSnapper.fixedVerticalChrome
+            + ClipRowStyle.scrollPitch * 7
+
+        XCTAssertEqual(
+            CursorPanelResizeSnapper.snappedHeight(
+                for: lower + 4,
+                minimumHeight: minimumHeight
+            ),
+            lower
+        )
+        XCTAssertEqual(
+            CursorPanelResizeSnapper.snappedHeight(
+                for: upper - 4,
+                minimumHeight: minimumHeight
+            ),
+            upper
+        )
+    }
+
+    func testCursorPanelResizeSnapPreservesTopEdge() {
+        let initialFrame = NSRect(x: 100, y: 200, width: 500, height: 520)
+        let targetHeight = CursorPanelResizeSnapper.snappedHeight(
+            for: initialFrame.height,
+            minimumHeight: 300
+        )
+        let snappedFrame = NSRect(
+            x: initialFrame.minX,
+            y: initialFrame.maxY - targetHeight,
+            width: initialFrame.width,
+            height: targetHeight
+        )
+
+        XCTAssertEqual(snappedFrame.maxY, initialFrame.maxY)
+        XCTAssertEqual(snappedFrame.minX, initialFrame.minX)
+        XCTAssertEqual(snappedFrame.width, initialFrame.width)
     }
 
     @MainActor

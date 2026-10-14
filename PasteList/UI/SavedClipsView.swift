@@ -7,6 +7,7 @@ import SwiftUI
 struct SavedClipsView: View {
     @ObservedObject private var viewModel: HistoryViewModel
     @State private var hoveredClipID: Int64?
+    @State private var hoverUpdateGeneration = 0
     @State private var rowWidths: [Int64: CGFloat] = [:]
     @State private var mouseSwipeOffsets: [Int64: CGFloat] = [:]
     private let blobStorage: BlobStorage
@@ -70,19 +71,28 @@ struct SavedClipsView: View {
     private var savedList: some View {
         List {
             Section {
-                ForEach(viewModel.pinned) { clip in
-                    MouseSwipeDeleteRow(offset: mouseSwipeOffset(for: clip)) {
-                        rowContent(for: clip)
+                ForEach(Array(viewModel.pinned.enumerated()), id: \.element.id) { index, clip in
+                    let isHighlighted = isHoverHighlightVisible(for: clip)
+                    let nextIsHighlighted = viewModel.pinned.indices.contains(index + 1)
+                        && isHoverHighlightVisible(for: viewModel.pinned[index + 1])
+                    ClipListRow(
+                        isHighlighted: isHighlighted,
+                        showsSeparator: index < viewModel.pinned.count - 1
+                            && !isHighlighted
+                            && !nextIsHighlighted
+                    ) {
+                        MouseSwipeDeleteRow(offset: mouseSwipeOffset(for: clip)) {
+                            rowContent(for: clip)
+                        }
                     }
                         .listRowBackground(rowBackground(for: clip))
+                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                        .listRowSeparator(.hidden)
                         .onHover { isInside in
-                            withAnimation(.easeInOut(duration: 0.12)) {
-                                if isInside, let clipID = clip.id {
-                                    hoveredClipID = clipID
-                                } else if let clipID = clip.id, hoveredClipID == clipID {
-                                    hoveredClipID = nil
-                                }
-                            }
+                            scheduleHoverUpdate(
+                                for: clip.id,
+                                isInside: isInside
+                            )
                         }
                         // Secondary click removes the clip from Saved and sends
                         // it back to the top of the history.
@@ -103,18 +113,26 @@ struct SavedClipsView: View {
         .mask {
             VStack(spacing: 0) {
                 LinearGradient(
-                    colors: [.clear, .black],
+                    stops: [
+                        .init(color: .clear, location: 0),
+                        .init(color: .black, location: 0.55),
+                        .init(color: .black, location: 1),
+                    ],
                     startPoint: .top,
                     endPoint: .bottom
                 )
-            .frame(height: 24)
+                .frame(height: CursorPanelStyle.listMaskHeight)
                 Color.black
                 LinearGradient(
-                    colors: [.black, .clear],
+                    stops: [
+                        .init(color: .black, location: 0),
+                        .init(color: .black, location: 0.45),
+                        .init(color: .clear, location: 1),
+                    ],
                     startPoint: .top,
                     endPoint: .bottom
                 )
-                .frame(height: 24)
+                .frame(height: CursorPanelStyle.listMaskHeight)
             }
         }
     }
@@ -197,11 +215,30 @@ struct SavedClipsView: View {
 
     @ViewBuilder
     private func rowBackground(for clip: ClipRecord) -> some View {
-        if let clipID = clip.id, hoveredClipID == clipID {
-            RoundedRectangle(cornerRadius: CursorPanelStyle.cornerRadius, style: .continuous)
-                .fill(Color.primary.opacity(0.08))
-        } else {
-            Color.clear
+        Color.clear
+    }
+
+    private func isHoverHighlightVisible(for clip: ClipRecord) -> Bool {
+        guard let clipID = clip.id, hoveredClipID == clipID else {
+            return false
+        }
+        return true
+    }
+
+    private func scheduleHoverUpdate(for clipID: Int64?, isInside: Bool) {
+        hoverUpdateGeneration &+= 1
+        let generation = hoverUpdateGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            guard generation == hoverUpdateGeneration else {
+                return
+            }
+            withAnimation(.easeInOut(duration: 0.2)) {
+                if isInside, let clipID {
+                    hoveredClipID = clipID
+                } else if let clipID, hoveredClipID == clipID {
+                    hoveredClipID = nil
+                }
+            }
         }
     }
 

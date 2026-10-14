@@ -471,12 +471,88 @@ private final class CursorPanelResizeDragHandleNSView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        CursorPanelResizeSnapper.snap(window: window)
         initialWindowFrame = nil
         initialMouseLocation = nil
     }
 
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .crosshair)
+    }
+}
+
+enum CursorPanelResizeSnapper {
+    static let animationDuration: TimeInterval = 0.42
+
+    /// Everything outside the scrolling rows: controls, panel margins, the
+    /// list fade masks, and the search field below the list.
+    /// This is 42 + 8 + 12 + 24 + 12 + 32 from the shared layout constants.
+    static let fixedVerticalChrome: CGFloat = 130
+
+    static func snappedHeight(
+        for proposedHeight: CGFloat,
+        minimumHeight: CGFloat,
+        maximumHeight: CGFloat? = nil
+    ) -> CGFloat {
+        let pitch = ClipRowStyle.scrollPitch
+        let minimumRows = max(
+            1,
+            Int(ceil((minimumHeight - fixedVerticalChrome) / pitch))
+        )
+        let nearestRows = Int(
+            max(
+                CGFloat(minimumRows),
+                ((proposedHeight - fixedVerticalChrome) / pitch).rounded()
+            )
+        )
+        var height = fixedVerticalChrome + CGFloat(nearestRows) * pitch
+
+        if let maximumHeight, height > maximumHeight {
+            let maximumRows = max(
+                minimumRows,
+                Int(floor((maximumHeight - fixedVerticalChrome) / pitch))
+            )
+            height = fixedVerticalChrome + CGFloat(maximumRows) * pitch
+        }
+        return height
+    }
+
+    @MainActor
+    static func snap(window: NSWindow?) {
+        guard
+            let window,
+            let screen = window.screen,
+            window.frame.height > 0
+        else {
+            return
+        }
+
+        let visibleFrame = screen.visibleFrame
+        let maximumHeight = min(
+            visibleFrame.height,
+            window.frame.maxY - visibleFrame.minY
+        )
+        let height = snappedHeight(
+            for: window.frame.height,
+            minimumHeight: window.minSize.height,
+            maximumHeight: maximumHeight
+        )
+        guard abs(height - window.frame.height) > 0.5 else {
+            return
+        }
+
+        // The handle changes the bottom edge, so keep the top edge fixed.
+        let targetFrame = NSRect(
+            x: window.frame.minX,
+            y: window.frame.maxY - height,
+            width: window.frame.width,
+            height: height
+        )
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = animationDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            window.animator().setFrame(targetFrame, display: true)
+        }
     }
 }
 

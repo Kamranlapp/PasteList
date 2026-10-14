@@ -579,6 +579,23 @@ final class MouseSwipeActionNSView: NSView {
 }
 
 enum RowScrollSnap {
+    static func isNearEdge(
+        currentOrigin: CGFloat,
+        maximumOrigin: CGFloat,
+        rowHeight: CGFloat
+    ) -> Bool {
+        guard rowHeight > 0, maximumOrigin > 0 else {
+            return true
+        }
+        // A fast fling can settle a little farther than the visible rubber
+        // band before AppKit finishes correcting the clip view. Keep the
+        // whole final row under native scroll physics so our row snap cannot
+        // re-enter during that correction.
+        let edgeTolerance = rowHeight
+        return currentOrigin <= edgeTolerance
+            || maximumOrigin - currentOrigin <= edgeTolerance
+    }
+
     static func targetOrigin(
         currentOrigin: CGFloat,
         maximumOrigin: CGFloat,
@@ -612,11 +629,11 @@ final class RowSnappingObserverView: NSView {
     var rowHeight: CGFloat
 
     private weak var scrollView: NSScrollView?
-    private var boundsObserver: NSObjectProtocol?
     private var scrollEndObserver: NSObjectProtocol?
     private var scrollWheelMonitor: Any?
     private var pendingSnap: DispatchWorkItem?
     private var isSnapping = false
+    private var settleRetries = 0
     private var installationAttempts = 0
 
     init(rowHeight: CGFloat) {
@@ -646,16 +663,12 @@ final class RowSnappingObserverView: NSView {
     private func tearDownObserver() {
         pendingSnap?.cancel()
         pendingSnap = nil
-        if let boundsObserver {
-            NotificationCenter.default.removeObserver(boundsObserver)
-        }
         if let scrollEndObserver {
             NotificationCenter.default.removeObserver(scrollEndObserver)
         }
         if let scrollWheelMonitor {
             NSEvent.removeMonitor(scrollWheelMonitor)
         }
-        boundsObserver = nil
         scrollEndObserver = nil
         scrollWheelMonitor = nil
         scrollView = nil
@@ -672,23 +685,19 @@ final class RowSnappingObserverView: NSView {
         }
         installationAttempts = 0
         self.scrollView = scrollView
-        scrollView.contentView.postsBoundsChangedNotifications = true
-        boundsObserver = NotificationCenter.default.addObserver(
-            forName: NSView.boundsDidChangeNotification,
-            object: scrollView.contentView,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.scheduleSnap()
-            }
-        }
+        // Let AppKit own the rubber-band while the user is still dragging.
+        // Snapping on every bounds change fights that animation at the edges.
+        scrollView.verticalScrollElasticity = .allowed
+        scrollView.horizontalScrollElasticity = .none
         scrollEndObserver = NotificationCenter.default.addObserver(
             forName: NSScrollView.didEndLiveScrollNotification,
             object: scrollView,
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.scheduleSnap(delay: 0)
+                // This notification can precede the last physics frame, so
+                // let the stability check below decide when snapping is safe.
+                self?.scheduleSnap(delay: 0.32)
             }
         }
         scrollWheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) {
@@ -728,10 +737,22 @@ final class RowSnappingObserverView: NSView {
         guard scrollView.bounds.contains(location) else {
             return
         }
-        // Wheel and trackpad momentum do not consistently publish
-        // `didEndLiveScroll` for SwiftUI-backed lists. Debouncing the actual
-        // events makes the last one reliably trigger the snap.
-        scheduleSnap(delay: 0.1)
+        if event.hasPreciseScrollingDeltas {
+            let isMomentumEnd = event.momentumPhase.contains(.ended)
+            let isGestureEnd = event.phase.contains(.ended)
+                && event.momentumPhase.isEmpty
+
+            guard isMomentumEnd || isGestureEnd else {
+                settleRetries = 0
+                pendingSnap?.cancel()
+                pendingSnap = nil
+                return
+            }
+            scheduleSnap(delay: 0.22)
+        } else {
+            // Traditional mouse-wheel events have no reliable phase data.
+            scheduleSnap(delay: 0.24)
+        }
     }
 
     private func nearestScrollView() -> NSScrollView? {
@@ -773,8 +794,25 @@ final class RowSnappingObserverView: NSView {
             return
         }
         pendingSnap?.cancel()
+        let scheduledOrigin = scrollView?.contentView.bounds.origin.y
         let workItem = DispatchWorkItem { [weak self] in
-            self?.snapToNearestRow()
+            guard let self else {
+                return
+            }
+            if
+                let scheduledOrigin,
+                let currentOrigin = self.scrollView?.contentView.bounds.origin.y,
+                abs(currentOrigin - scheduledOrigin) > 0.5,
+                self.settleRetries < 4
+            {
+                // Momentum is still moving the clip view. Wait for another
+                // quiet interval instead of animating over the physics.
+                self.settleRetries += 1
+                self.scheduleSnap(delay: 0.12)
+                return
+            }
+            self.settleRetries = 0
+            self.snapToNearestRow()
         }
         pendingSnap = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
@@ -790,19 +828,37 @@ final class RowSnappingObserverView: NSView {
         }
         let clipView = scrollView.contentView
         let maximumOrigin = max(documentView.bounds.height - clipView.bounds.height, 0)
+        let currentOrigin = clipView.bounds.origin.y
+        // During elastic overscroll AppKit temporarily exposes an origin
+        // outside the document bounds. Never animate against that transient
+        // value; the scroll view's own bounce must finish first.
+        guard currentOrigin >= 0, currentOrigin <= maximumOrigin else {
+            return
+        }
+        // Near an edge, AppKit's native elastic settling is smoother than a
+        // second animation to a clamped (and often non-row-aligned) maximum.
+        guard !RowScrollSnap.isNearEdge(
+            currentOrigin: currentOrigin,
+            maximumOrigin: maximumOrigin,
+            rowHeight: rowHeight
+        ) else {
+            return
+        }
         let targetOrigin = RowScrollSnap.targetOrigin(
-            currentOrigin: clipView.bounds.origin.y,
+            currentOrigin: currentOrigin,
             maximumOrigin: maximumOrigin,
             rowHeight: rowHeight
         )
-        guard abs(targetOrigin - clipView.bounds.origin.y) > 0.5 else {
+        guard abs(targetOrigin - currentOrigin) > 0.5 else {
             return
         }
 
         isSnapping = true
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.14
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            // A longer ease-out gives the final row alignment a gentle
+            // inertial tail instead of feeling like a second hard stop.
+            context.duration = 0.38
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             clipView.animator().setBoundsOrigin(
                 NSPoint(x: clipView.bounds.origin.x, y: targetOrigin)
             )

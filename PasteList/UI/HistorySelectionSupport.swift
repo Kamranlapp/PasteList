@@ -3,7 +3,61 @@ import SwiftUI
 
 enum CursorPanelStyle {
     static let cornerRadius: CGFloat = 15
+    static let hoverCornerRadius: CGFloat = 8
     static let contentPadding: CGFloat = 6
+    /// Short, high-contrast fades keep the first and last row readable while
+    /// still hiding the clipped edge of the scrolling list.
+    static let listMaskHeight: CGFloat = 12
+    static let rowSeparatorInset: CGFloat = 20
+}
+
+struct ClipRowSeparator: View {
+    var body: some View {
+        LinearGradient(
+            stops: [
+                Gradient.Stop(color: .clear, location: 0),
+                Gradient.Stop(color: Color.primary.opacity(0.18), location: 0.18),
+                Gradient.Stop(color: Color.primary.opacity(0.18), location: 0.82),
+                Gradient.Stop(color: .clear, location: 1),
+            ],
+            startPoint: .leading,
+            endPoint: .trailing
+        )
+        .frame(height: 1)
+        .padding(.horizontal, CursorPanelStyle.rowSeparatorInset)
+        .allowsHitTesting(false)
+    }
+}
+
+struct ClipListRow<Content: View>: View {
+    let isHighlighted: Bool
+    let showsSeparator: Bool
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        ZStack {
+            if showsSeparator {
+                ClipRowSeparator()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .allowsHitTesting(false)
+            }
+
+            if isHighlighted {
+                RoundedRectangle(
+                    cornerRadius: CursorPanelStyle.hoverCornerRadius,
+                    style: .continuous
+                )
+                .fill(Color.primary.opacity(0.08))
+                .padding(.horizontal, -12)
+                .allowsHitTesting(false)
+            }
+
+            content()
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: ClipRowStyle.scrollPitch)
+        .contentShape(Rectangle())
+    }
 }
 
 extension View {

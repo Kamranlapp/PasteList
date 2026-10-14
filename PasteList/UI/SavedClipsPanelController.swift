@@ -3,7 +3,7 @@ import SwiftUI
 
 enum SavedClipsPlacement {
     static let defaultGap: CGFloat = 16
-    static let widthRatio: CGFloat = 0.66
+    static let widthRatio: CGFloat = 0.80
     static let bottomMaskClearance: CGFloat = 16
 
     /// Two thirds the width of the history panel's visible surface and a

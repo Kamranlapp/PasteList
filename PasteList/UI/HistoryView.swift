@@ -10,6 +10,7 @@ struct HistoryView: View {
     @State private var isCursorPanelResizeModeEnabled = false
     @State private var isSavedPanelVisible: Bool
     @State private var hoveredClipID: Int64?
+    @State private var hoverUpdateGeneration = 0
     @State private var rowWidths: [Int64: CGFloat] = [:]
     @State private var mouseSwipeOffsets: [Int64: CGFloat] = [:]
     @ObservedObject private var selectionResetController: HistorySelectionResetController
@@ -150,6 +151,7 @@ struct HistoryView: View {
                                 }
                             }
                         )
+                        .offset(x: StatusItemController.cursorScrollBarSpacing / 2)
                     }
 
                     panelSurface
@@ -396,20 +398,28 @@ struct HistoryView: View {
             .mask {
                 VStack(spacing: 0) {
                     LinearGradient(
-                        colors: [.clear, .black],
+                        stops: [
+                            .init(color: .clear, location: 0),
+                            .init(color: .black, location: 0.55),
+                            .init(color: .black, location: 1),
+                        ],
                         startPoint: .top,
                         endPoint: .bottom
                     )
-                    .frame(height: 24)
+                    .frame(height: CursorPanelStyle.listMaskHeight)
 
                     Color.black
 
                     LinearGradient(
-                        colors: [.black, .clear],
+                        stops: [
+                            .init(color: .black, location: 0),
+                            .init(color: .black, location: 0.45),
+                            .init(color: .clear, location: 1),
+                        ],
                         startPoint: .top,
                         endPoint: .bottom
                     )
-                    .frame(height: 24)
+                    .frame(height: CursorPanelStyle.listMaskHeight)
                 }
             }
             .coordinateSpace(name: Self.listCoordinateSpace)
@@ -443,11 +453,21 @@ struct HistoryView: View {
     @ViewBuilder
     private func rows(_ clips: [ClipRecord]) -> some View {
         ForEach(Array(clips.enumerated()), id: \.element.id) { index, clip in
-            MouseSwipeDeleteRow(offset: mouseSwipeOffset(for: clip)) {
-                rowContent(
-                    for: clip,
-                    quickPasteKey: QuickPasteShortcut.label(forEntryIndex: index)
-                )
+            let isHighlighted = isHoverHighlightVisible(for: clip)
+            let nextIsHighlighted = clips.indices.contains(index + 1)
+                && isHoverHighlightVisible(for: clips[index + 1])
+            ClipListRow(
+                isHighlighted: isHighlighted,
+                showsSeparator: index < clips.count - 1
+                    && !isHighlighted
+                    && !nextIsHighlighted
+            ) {
+                MouseSwipeDeleteRow(offset: mouseSwipeOffset(for: clip)) {
+                    rowContent(
+                        for: clip,
+                        quickPasteKey: QuickPasteShortcut.label(forEntryIndex: index)
+                    )
+                }
             }
             .background {
                 if let id = clip.id {
@@ -466,18 +486,13 @@ struct HistoryView: View {
             .listRowBackground(
                 rowBackground(for: clip, in: clips)
             )
+            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+            .listRowSeparator(.hidden)
             .onHover { isInside in
-                guard !showsBulkPastePanel else {
-                    hoveredClipID = nil
-                    return
-                }
-                withAnimation(.easeInOut(duration: 0.12)) {
-                    if isInside, let clipID = clip.id {
-                        hoveredClipID = clipID
-                    } else if let clipID = clip.id, hoveredClipID == clipID {
-                        hoveredClipID = nil
-                    }
-                }
+                scheduleHoverUpdate(
+                    for: clip.id,
+                    isInside: isInside
+                )
             }
             // Secondary click saves the clip outright — no menu step.
             .overlay {
@@ -626,15 +641,42 @@ struct HistoryView: View {
                 roundsBottomCorners: !hasSelectedRowBelow
             )
             .fill(Color.accentColor.opacity(0.18))
-        } else if
-            let clipID = clip.id,
-            hoveredClipID == clipID,
-            !showsBulkPastePanel
-        {
-            RoundedRectangle(cornerRadius: CursorPanelStyle.cornerRadius, style: .continuous)
-                .fill(Color.primary.opacity(0.08))
         } else {
             Color.clear
+        }
+    }
+
+    private func isHoverHighlightVisible(for clip: ClipRecord) -> Bool {
+        guard
+            let clipID = clip.id,
+            hoveredClipID == clipID,
+            !viewModel.selectedClipIDs.contains(clipID)
+        else {
+            return false
+        }
+        return !showsBulkPastePanel
+    }
+
+    private func scheduleHoverUpdate(for clipID: Int64?, isInside: Bool) {
+        hoverUpdateGeneration &+= 1
+        let generation = hoverUpdateGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            guard generation == hoverUpdateGeneration else {
+                return
+            }
+            guard !showsBulkPastePanel else {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    hoveredClipID = nil
+                }
+                return
+            }
+            withAnimation(.easeInOut(duration: 0.2)) {
+                if isInside, let clipID {
+                    hoveredClipID = clipID
+                } else if let clipID, hoveredClipID == clipID {
+                    hoveredClipID = nil
+                }
+            }
         }
     }
 
