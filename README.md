@@ -121,18 +121,18 @@ updates use Sparkle and the signed ZIP assets listed in
 https://raw.githubusercontent.com/Kamranlapp/PasteList/main/appcast.xml
 ```
 
-Prepare version 1.2 (or set `PASTELIST_VERSION`) with a Developer ID
+Prepare version 1.4 (or set `PASTELIST_VERSION`) with a Developer ID
 Application identity and a Sparkle Ed25519 key available in the local keychain:
 
 ```sh
 Scripts/build-update.sh
 ```
 
-The script creates `dist/updates/PasteList-1.2.zip`, signs its appcast entry
+The script creates `dist/updates/PasteList-1.4.zip`, signs its appcast entry
 using the Sparkle keychain item, and copies the resulting `appcast.xml` to the
 repository root. It obtains the public key from `SPARKLE_PUBLIC_ED_KEY` or, if
 that is unset, reads the existing key from the keychain; it never writes a
-private key to the repository. Upload the ZIP to GitHub Release `v1.2` before
+private key to the repository. Upload the ZIP to GitHub Release `v1.4` before
 committing or publishing `appcast.xml` to `main`. ZIP files remain ignored by
 Git.
 

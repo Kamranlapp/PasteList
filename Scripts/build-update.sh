@@ -2,7 +2,7 @@
 set -euo pipefail
 
 project_dir="$(cd "$(dirname "$0")/.." && pwd)"
-version="${PASTELIST_VERSION:-1.2}"
+version="${PASTELIST_VERSION:-1.4}"
 update_dir="${PASTELIST_UPDATE_DIR:-$project_dir/dist/updates}"
 derived_data_dir="${PASTELIST_DERIVED_DATA_DIR:-$project_dir/DerivedData/ReleaseUpdate}"
 feed_url="${PASTELIST_FEED_URL:-https://raw.githubusercontent.com/Kamranlapp/PasteList/main/appcast.xml}"
@@ -17,7 +17,7 @@ Usage: Scripts/build-update.sh [--dry-run]
 
 Builds a signed PasteList Release app, packages PasteList-VERSION.zip, and
 generates appcast.xml. Configuration comes from environment variables:
-  PASTELIST_VERSION                    defaults to 1.2
+  PASTELIST_VERSION                    defaults to 1.4
   PASTELIST_DEVELOPER_IDENTITY         Developer ID Application identity
   SPARKLE_PUBLIC_ED_KEY                optional public Ed25519 key; otherwise read from Keychain
   PASTELIST_SPARKLE_KEYCHAIN_ACCOUNT   Sparkle Keychain account (default: ed25519)
