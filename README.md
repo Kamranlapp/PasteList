@@ -111,6 +111,41 @@ volume, and installer-file icons attached:
 Scripts/package-dmg.sh /path/to/Release/PasteList.app
 ```
 
+## Updates
+
+The first installation remains the existing PasteList DMG. Regular direct
+updates use Sparkle and the signed ZIP assets listed in
+[`appcast.xml`](appcast.xml). Release builds embed this feed URL:
+
+```text
+https://raw.githubusercontent.com/Kamranlapp/PasteList/main/appcast.xml
+```
+
+Prepare version 1.2 (or set `PASTELIST_VERSION`) with a Developer ID
+Application identity and a Sparkle Ed25519 key available in the local keychain:
+
+```sh
+Scripts/build-update.sh
+```
+
+The script creates `dist/updates/PasteList-1.2.zip`, signs its appcast entry
+using the Sparkle keychain item, and copies the resulting `appcast.xml` to the
+repository root. It obtains the public key from `SPARKLE_PUBLIC_ED_KEY` or, if
+that is unset, reads the existing key from the keychain; it never writes a
+private key to the repository. Upload the ZIP to GitHub Release `v1.2` before
+committing or publishing `appcast.xml` to `main`. ZIP files remain ignored by
+Git.
+
+To validate the signing/key setup without building anything:
+
+```sh
+Scripts/build-update.sh --dry-run
+```
+
+`PASTELIST_DEVELOPER_IDENTITY` may select a specific Developer ID Application
+certificate. `PASTELIST_SPARKLE_KEYCHAIN_ACCOUNT` selects the Sparkle keychain
+account (default: `ed25519`).
+
 ## Privacy
 
 All clipboard data is stored locally. PasteList does not use iCloud, analytics,

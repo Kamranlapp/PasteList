@@ -4,9 +4,10 @@ import SwiftUI
 enum SavedClipsPlacement {
     static let defaultGap: CGFloat = 16
     static let widthRatio: CGFloat = 0.66
+    static let bottomMaskClearance: CGFloat = 16
 
-    /// Two thirds the width of the history panel's visible surface, exactly
-    /// half its height, sharing its top edge.
+    /// Two thirds the width of the history panel's visible surface and a
+    /// half-height target rounded up to complete visible rows.
     static func frame(
         panelSurfaceFrame: NSRect,
         visibleFrame: NSRect,
@@ -14,7 +15,7 @@ enum SavedClipsPlacement {
     ) -> NSRect {
         let size = NSSize(
             width: (panelSurfaceFrame.width * widthRatio).rounded(),
-            height: (panelSurfaceFrame.height / 2).rounded()
+            height: alignedHeight(for: panelSurfaceFrame.height / 2)
         )
         let rightOrigin = panelSurfaceFrame.maxX + gap
         let leftOrigin = panelSurfaceFrame.minX - gap - size.width
@@ -34,6 +35,14 @@ enum SavedClipsPlacement {
             maximumY
         )
         return NSRect(origin: NSPoint(x: originX, y: originY), size: size)
+    }
+
+    static func alignedHeight(for proposedHeight: CGFloat) -> CGFloat {
+        let verticalPadding = CursorPanelStyle.contentPadding * 2
+        // Round the list viewport itself upward before adding equal outer
+        // margins. This prevents a padding change from dropping a whole row.
+        let rowCount = ceil(max(proposedHeight, 0) / ClipRowStyle.scrollPitch)
+        return rowCount * ClipRowStyle.scrollPitch + verticalPadding + bottomMaskClearance
     }
 }
 
@@ -155,6 +164,15 @@ final class SavedClipsPanelController {
     /// panel alone, or the two windows together when Saved is open.
     func anchorFrame(surfaceFrame: NSRect) -> NSRect {
         panel.isVisible ? surfaceFrame.union(panel.frame) : surfaceFrame
+    }
+
+    /// Keeps text previews the same height as the Saved panel, whether the
+    /// panel is currently visible or its frame is only being calculated.
+    func previewHeight(relativeTo historyPanel: NSWindow) -> CGFloat? {
+        if panel.isVisible {
+            return panel.frame.height
+        }
+        return frame(relativeTo: historyPanel)?.height
     }
 
     private func frame(relativeTo historyPanel: NSWindow) -> NSRect? {

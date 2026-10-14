@@ -10,6 +10,7 @@ struct HistoryView: View {
     @State private var isCursorPanelResizeModeEnabled = false
     @State private var isSavedPanelVisible: Bool
     @State private var hoveredClipID: Int64?
+    @State private var rowWidths: [Int64: CGFloat] = [:]
     @State private var mouseSwipeOffsets: [Int64: CGFloat] = [:]
     @ObservedObject private var selectionResetController: HistorySelectionResetController
     @ObservedObject private var featureTipsState: FeatureTipsState
@@ -24,7 +25,7 @@ struct HistoryView: View {
     private let onCursorPanelFilterMenuPresentationChanged: (Bool) -> Void
     private let onCursorPanelClearConfirmationChanged: (Bool) -> Void
     private let onSavedPanelVisibilityChanged: (Bool) -> Void
-    private let onImagePreviewChanged: (Int64?) -> Void
+    private let onPreviewChanged: (ClipPreviewTarget?) -> Void
     private let isOnboardingCompleted: () -> Bool
     private static let listCoordinateSpace = "PasteListHistoryList"
     private static let imagePreviewHoverDelay = Duration.milliseconds(500)
@@ -58,7 +59,7 @@ struct HistoryView: View {
         onCursorPanelFilterMenuPresentationChanged: @escaping (Bool) -> Void = { _ in },
         onCursorPanelClearConfirmationChanged: @escaping (Bool) -> Void = { _ in },
         onSavedPanelVisibilityChanged: @escaping (Bool) -> Void = { _ in },
-        onImagePreviewChanged: @escaping (Int64?) -> Void = { _ in },
+        onPreviewChanged: @escaping (ClipPreviewTarget?) -> Void = { _ in },
         selectionResetController: HistorySelectionResetController,
         featureTipsState: FeatureTipsState = FeatureTipsState(),
         isOnboardingCompleted: @escaping () -> Bool = { true }
@@ -74,7 +75,7 @@ struct HistoryView: View {
         self.onCursorPanelFilterMenuPresentationChanged = onCursorPanelFilterMenuPresentationChanged
         self.onCursorPanelClearConfirmationChanged = onCursorPanelClearConfirmationChanged
         self.onSavedPanelVisibilityChanged = onSavedPanelVisibilityChanged
-        self.onImagePreviewChanged = onImagePreviewChanged
+        self.onPreviewChanged = onPreviewChanged
         self.selectionResetController = selectionResetController
         self.featureTipsState = featureTipsState
         self.isOnboardingCompleted = isOnboardingCompleted
@@ -255,7 +256,9 @@ struct HistoryView: View {
 
     private var panelSurface: some View {
         mainWindow
-            .padding(usesTransparentBackground ? StatusItemController.cursorPanelPadding : 0)
+            .padding(
+                usesTransparentBackground ? CursorPanelStyle.contentPadding : 0
+            )
             .frame(
                 maxWidth: .infinity,
                 maxHeight: .infinity
@@ -272,7 +275,7 @@ struct HistoryView: View {
             }
             .clipShape(
                 RoundedRectangle(
-                    cornerRadius: usesTransparentBackground ? 25 : 0,
+                    cornerRadius: usesTransparentBackground ? CursorPanelStyle.cornerRadius : 0,
                     style: .continuous
                 )
             )
@@ -295,24 +298,33 @@ struct HistoryView: View {
                 presentCoachMarksIfNeeded()
             }
             .task(id: hoveredClipID) {
-                await updateImagePreview()
+                await updatePreview()
             }
     }
 
-    private func updateImagePreview() async {
+    private func updatePreview() async {
         guard
             let clipID = hoveredClipID,
-            let clip = orderedClips.first(where: { $0.id == clipID }),
-            ClipContentType(rawValue: clip.type) == .image
+            let clip = orderedClips.first(where: { $0.id == clipID })
         else {
-            onImagePreviewChanged(nil)
+            onPreviewChanged(nil)
             return
         }
         try? await Task.sleep(for: Self.imagePreviewHoverDelay)
         guard !Task.isCancelled else {
             return
         }
-        onImagePreviewChanged(clipID)
+        if ClipContentType(rawValue: clip.type) == .image {
+            onPreviewChanged(.image(clipID))
+        } else if let rowWidth = rowWidths[clipID], ClipTextPreviewPolicy.shouldShow(
+            for: clip,
+            rowWidth: rowWidth,
+            hasQuickPasteKey: true
+        ) {
+            onPreviewChanged(.text(clipID))
+        } else {
+            onPreviewChanged(nil)
+        }
     }
 
     private var mainWindow: some View {
@@ -376,8 +388,11 @@ struct HistoryView: View {
                 }
             }
             .listStyle(.inset)
+            .compactVerticalListMargins()
+            .environment(\.defaultMinListRowHeight, ClipRowStyle.height)
             .scrollIndicators(.hidden)
             .scrollContentBackground(usesTransparentBackground ? .hidden : .visible)
+            .background(RowSnappingScrollObserver(rowHeight: ClipRowStyle.scrollPitch))
             .mask {
                 VStack(spacing: 0) {
                     LinearGradient(
@@ -385,7 +400,7 @@ struct HistoryView: View {
                         startPoint: .top,
                         endPoint: .bottom
                     )
-                    .frame(height: 12)
+                    .frame(height: 24)
 
                     Color.black
 
@@ -484,7 +499,8 @@ struct HistoryView: View {
                 ClipRowView(
                     clip: clip,
                     thumbnailCache: thumbnailCache,
-                    quickPasteKey: quickPasteKey
+                    quickPasteKey: quickPasteKey,
+                    onWidthChanged: { updateRowWidth($0, for: clip) }
                 )
 
                 TextSelectionSourceView(
@@ -508,7 +524,8 @@ struct HistoryView: View {
                         clip: clip,
                         thumbnailCache: thumbnailCache,
                         fileURLs: urls,
-                        quickPasteKey: quickPasteKey
+                        quickPasteKey: quickPasteKey,
+                        onWidthChanged: { updateRowWidth($0, for: clip) }
                     )
 
                     FileDragSourceView(
@@ -536,7 +553,8 @@ struct HistoryView: View {
             ClipRowView(
                 clip: clip,
                 thumbnailCache: thumbnailCache,
-                quickPasteKey: quickPasteKey
+                quickPasteKey: quickPasteKey,
+                onWidthChanged: { updateRowWidth($0, for: clip) }
             )
 
             MouseSwipeActionView(
@@ -613,7 +631,7 @@ struct HistoryView: View {
             hoveredClipID == clipID,
             !showsBulkPastePanel
         {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: CursorPanelStyle.cornerRadius, style: .continuous)
                 .fill(Color.primary.opacity(0.08))
         } else {
             Color.clear
@@ -643,7 +661,14 @@ struct HistoryView: View {
         showsBulkPastePanel = false
         isCursorPanelResizeModeEnabled = false
         hoveredClipID = nil
-        onImagePreviewChanged(nil)
+        onPreviewChanged(nil)
         viewModel.clearSelection()
+    }
+
+    private func updateRowWidth(_ width: CGFloat, for clip: ClipRecord) {
+        guard let id = clip.id, rowWidths[id] != width else {
+            return
+        }
+        rowWidths[id] = width
     }
 }

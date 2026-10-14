@@ -56,6 +56,7 @@
 		100000000000000000000042 /* FeatureTipsState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000042 /* FeatureTipsState.swift */; };
 		100000000000000000000043 /* FeatureTipBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000043 /* FeatureTipBubble.swift */; };
 		100000000000000000000044 /* FeatureTipArrowBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000044 /* FeatureTipArrowBubble.swift */; };
+		100000000000000000000045 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 700000000000000000000004 /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -127,6 +128,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				100000000000000000000004 /* GRDB in Frameworks */,
+				100000000000000000000045 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -279,6 +281,7 @@
 			name = PasteList;
 			packageProductDependencies = (
 				700000000000000000000002 /* GRDB */,
+				700000000000000000000004 /* Sparkle */,
 			);
 			productName = PasteList;
 			productReference = 200000000000000000000005 /* PasteDebug.app */;
@@ -335,6 +338,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				700000000000000000000001 /* XCRemoteSwiftPackageReference "GRDB.swift" */,
+				700000000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 400000000000000000000005 /* Products */;
@@ -498,6 +502,8 @@
 				PRODUCT_MODULE_NAME = PasteList;
 				PRODUCT_NAME = PasteDebug;
 				PROVISIONING_PROFILE_SPECIFIER = "";
+				SPARKLE_PUBLIC_ED_KEY = "";
+				SU_FEED_URL = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 6.0;
 			};
@@ -526,6 +532,8 @@
 				PRODUCT_MODULE_NAME = PasteList;
 				PRODUCT_NAME = PasteList;
 				PROVISIONING_PROFILE_SPECIFIER = "";
+				SPARKLE_PUBLIC_ED_KEY = "";
+				SU_FEED_URL = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 6.0;
 			};
@@ -604,6 +612,14 @@
 				version = 7.11.1;
 			};
 		};
+		700000000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle.git";
+			requirement = {
+				kind = exactVersion;
+				version = 2.9.6;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -611,6 +627,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 700000000000000000000001 /* XCRemoteSwiftPackageReference "GRDB.swift" */;
 			productName = GRDB;
+		};
+		700000000000000000000004 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 700000000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

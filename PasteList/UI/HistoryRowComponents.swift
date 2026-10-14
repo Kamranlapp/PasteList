@@ -1,6 +1,13 @@
 import AppKit
 import SwiftUI
 
+enum ClipRowStyle {
+    static let height: CGFloat = 36
+    /// A SwiftUI inset list adds eight points between the 36-point row frames.
+    /// Saved uses this visual pitch for both snapping and panel sizing.
+    static let scrollPitch: CGFloat = height + 8
+}
+
 struct EmptyStateView: View {
     let title: String
     let systemImage: String
@@ -28,6 +35,7 @@ struct ClipRowView: View {
     let thumbnailCache: ImageThumbnailCache
     var fileURLs: [URL] = []
     var quickPasteKey: String? = nil
+    var onWidthChanged: ((CGFloat) -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 10) {
@@ -79,11 +87,18 @@ struct ClipRowView: View {
                     .layoutPriority(1)
             }
         }
-        .padding(.vertical, 3)
         // Keep glyph overhang away from the List row's clipping boundary.
         // This is especially visible on the final digit in times such as 14:50.
         .padding(.trailing, 8)
+        .frame(height: ClipRowStyle.height)
         .contentShape(Rectangle())
+        .background {
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear { onWidthChanged?(proxy.size.width) }
+                    .onChange(of: proxy.size.width) { onWidthChanged?($0) }
+            }
+        }
     }
 
     @ViewBuilder
@@ -139,7 +154,8 @@ struct MouseSwipeDeleteRow<Content: View>: View {
             content()
                 .offset(x: offset)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .clipShape(Rectangle())
+        .frame(height: ClipRowStyle.height)
     }
 }
 

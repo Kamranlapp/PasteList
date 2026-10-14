@@ -47,6 +47,7 @@ final class StatusItemController: NSObject {
     private let actionsPopover: NSPopover
     private let cursorPanel: CursorHistoryPanel
     private let imagePreviewPanel: ImagePreviewPanelController
+    private let textPreviewPanel: TextPreviewPanelController
     private let savedClipsPanel: SavedClipsPanelController
     private let historyViewModel: HistoryViewModel
     private let thumbnailCache: ImageThumbnailCache
@@ -57,6 +58,7 @@ final class StatusItemController: NSObject {
     private let pasteFallbackPanel: PasteFallbackPanelController
     private let appReviewRequestController: AppReviewRequestController
     private let onOpenSettings: () -> Void
+    private let onCheckForUpdates: () -> Void
     #if DEBUG
     var onResetOnboarding: (() -> Void)?
     #endif
@@ -78,7 +80,8 @@ final class StatusItemController: NSObject {
         appReviewRequestController: AppReviewRequestController = AppReviewRequestController(),
         featureTipsState: FeatureTipsState = FeatureTipsState(),
         isOnboardingCompleted: @escaping () -> Bool = { true },
-        onOpenSettings: @escaping () -> Void
+        onOpenSettings: @escaping () -> Void,
+        onCheckForUpdates: @escaping () -> Void = {}
     ) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         actionsPopover = NSPopover()
@@ -93,6 +96,7 @@ final class StatusItemController: NSObject {
             defer: false
         )
         imagePreviewPanel = ImagePreviewPanelController(blobStorage: blobStorage)
+        textPreviewPanel = TextPreviewPanelController(blobStorage: blobStorage)
         savedClipsPanel = SavedClipsPanelController()
         thumbnailCache = ImageThumbnailCache(blobStorage: blobStorage)
         // One view model backs both the history panel and the Saved panel, so a
@@ -116,6 +120,7 @@ final class StatusItemController: NSObject {
         self.pasteAutomationController = pasteAutomationController
         self.appReviewRequestController = appReviewRequestController
         self.onOpenSettings = onOpenSettings
+        self.onCheckForUpdates = onCheckForUpdates
         pasteFallbackPanel = PasteFallbackPanelController(
             pasteAutomationController: pasteAutomationController
         )
@@ -164,6 +169,10 @@ final class StatusItemController: NSObject {
                     self?.actionsPopover.performClose(nil)
                     self?.onOpenSettings()
                 },
+                checkForUpdates: { [weak self] in
+                    self?.actionsPopover.performClose(nil)
+                    self?.onCheckForUpdates()
+                },
                 quit: {
                     NSApp.terminate(nil)
                 },
@@ -189,6 +198,10 @@ final class StatusItemController: NSObject {
                     self?.actionsPopover.performClose(nil)
                     self?.onOpenSettings()
                 },
+                checkForUpdates: { [weak self] in
+                    self?.actionsPopover.performClose(nil)
+                    self?.onCheckForUpdates()
+                },
                 quit: {
                     NSApp.terminate(nil)
                 }
@@ -201,7 +214,7 @@ final class StatusItemController: NSObject {
     private func updateActionsPopoverSize() {
         actionsPopover.contentSize = NSSize(
             width: 240,
-            height: DebugSettings.showsResetButtons() ? 242 : 142
+            height: DebugSettings.showsResetButtons() ? 272 : 172
         )
     }
 
@@ -331,8 +344,8 @@ final class StatusItemController: NSObject {
                 onSavedPanelVisibilityChanged: { [weak self] isVisible in
                     self?.setSavedPanelVisible(isVisible)
                 },
-                onImagePreviewChanged: { [weak self] clipID in
-                    self?.setImagePreview(clipID: clipID)
+                onPreviewChanged: { [weak self] target in
+                    self?.setPreview(target)
                 },
                 selectionResetController: selectionResetController,
                 featureTipsState: featureTipsState,
@@ -355,8 +368,8 @@ final class StatusItemController: NSObject {
                 onActivateClip: { [weak self] clip in
                     self?.activateClip(clip)
                 },
-                onImagePreviewChanged: { [weak self] clipID in
-                    self?.setImagePreview(clipID: clipID)
+                onPreviewChanged: { [weak self] target in
+                    self?.setPreview(target)
                 }
             )
         )
@@ -544,6 +557,7 @@ final class StatusItemController: NSObject {
     private func dismissCursorPanelForPaste() {
         removeGlobalDismissMonitor()
         imagePreviewPanel.hide()
+        textPreviewPanel.hide()
         savedClipsPanel.hide()
         setCursorPanelResizeMode(false)
         cursorPanelFadeGeneration += 1
@@ -590,18 +604,38 @@ final class StatusItemController: NSObject {
             : [.transient, .moveToActiveSpace, .fullScreenAuxiliary]
     }
 
-    private func setImagePreview(clipID: Int64?) {
-        guard let clipID, cursorPanel.isVisible, !isCursorPanelFadingOut else {
+    private func setPreview(_ target: ClipPreviewTarget?) {
+        guard let target, cursorPanel.isVisible, !isCursorPanelFadingOut else {
             imagePreviewPanel.hide()
+            textPreviewPanel.hide()
             return
         }
-        imagePreviewPanel.show(
-            clipID: clipID,
-            relativeTo: cursorPanel,
-            anchorFrame: savedClipsPanel.anchorFrame(
-                surfaceFrame: Self.cursorPanelSurfaceFrame(in: cursorPanel.frame)
-            )
+        let anchorFrame = savedClipsPanel.anchorFrame(
+            surfaceFrame: Self.cursorPanelSurfaceFrame(in: cursorPanel.frame)
         )
+        switch target {
+        case .image(let clipID):
+            textPreviewPanel.hide()
+            imagePreviewPanel.show(
+                clipID: clipID,
+                relativeTo: cursorPanel,
+                anchorFrame: anchorFrame
+            )
+        case .text(let clipID):
+            imagePreviewPanel.hide()
+            guard let clip = historyViewModel.history.first(where: { $0.id == clipID })
+                ?? historyViewModel.pinned.first(where: { $0.id == clipID })
+            else {
+                textPreviewPanel.hide()
+                return
+            }
+            textPreviewPanel.show(
+                clip: clip,
+                relativeTo: cursorPanel,
+                anchorFrame: anchorFrame,
+                contentHeight: savedClipsPanel.previewHeight(relativeTo: cursorPanel)
+            )
+        }
     }
 
     private func setCursorPanelResizeMode(_ isEnabled: Bool) {
@@ -713,6 +747,7 @@ final class StatusItemController: NSObject {
         }
         removeGlobalDismissMonitor()
         imagePreviewPanel.hide()
+        textPreviewPanel.hide()
         savedClipsPanel.hide()
         setCursorPanelResizeMode(false)
         guard cursorPanel.isVisible else {
@@ -819,6 +854,7 @@ final class CursorHistoryPanel: NSPanel {
 
 private struct StatusActionsView: View {
     let openSettings: () -> Void
+    let checkForUpdates: () -> Void
     let quit: () -> Void
     #if DEBUG
     let restart: () -> Void
@@ -832,6 +868,11 @@ private struct StatusActionsView: View {
     var body: some View {
         VStack(spacing: 4) {
             actionButton("Settings…", systemImage: "gearshape", action: openSettings)
+            actionButton(
+                "Check for Updates…",
+                systemImage: "arrow.down.circle",
+                action: checkForUpdates
+            )
             #if DEBUG
             Divider()
             actionButton("Restart \(AppConfiguration.name)", systemImage: "arrow.clockwise", action: restart)

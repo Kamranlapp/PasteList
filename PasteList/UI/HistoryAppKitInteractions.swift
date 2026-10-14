@@ -577,3 +577,245 @@ final class MouseSwipeActionNSView: NSView {
         }
     }
 }
+
+enum RowScrollSnap {
+    static func targetOrigin(
+        currentOrigin: CGFloat,
+        maximumOrigin: CGFloat,
+        rowHeight: CGFloat
+    ) -> CGFloat {
+        guard rowHeight > 0 else {
+            return min(max(currentOrigin, 0), maximumOrigin)
+        }
+        let alignedOrigin = (currentOrigin / rowHeight).rounded() * rowHeight
+        return min(max(alignedOrigin, 0), maximumOrigin)
+    }
+}
+
+/// Observes SwiftUI's backing scroll view and, after wheel or trackpad momentum
+/// ends, aligns the visible top edge to the nearest complete history row.
+struct RowSnappingScrollObserver: NSViewRepresentable {
+    let rowHeight: CGFloat
+
+    func makeNSView(context: Context) -> RowSnappingObserverView {
+        RowSnappingObserverView(rowHeight: rowHeight)
+    }
+
+    func updateNSView(_ nsView: RowSnappingObserverView, context: Context) {
+        nsView.rowHeight = rowHeight
+        nsView.installIfNeeded()
+    }
+}
+
+@MainActor
+final class RowSnappingObserverView: NSView {
+    var rowHeight: CGFloat
+
+    private weak var scrollView: NSScrollView?
+    private var boundsObserver: NSObjectProtocol?
+    private var scrollEndObserver: NSObjectProtocol?
+    private var scrollWheelMonitor: Any?
+    private var pendingSnap: DispatchWorkItem?
+    private var isSnapping = false
+    private var installationAttempts = 0
+
+    init(rowHeight: CGFloat) {
+        self.rowHeight = rowHeight
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        DispatchQueue.main.async { [weak self] in
+            self?.installIfNeeded()
+        }
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil {
+            tearDownObserver()
+        }
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    private func tearDownObserver() {
+        pendingSnap?.cancel()
+        pendingSnap = nil
+        if let boundsObserver {
+            NotificationCenter.default.removeObserver(boundsObserver)
+        }
+        if let scrollEndObserver {
+            NotificationCenter.default.removeObserver(scrollEndObserver)
+        }
+        if let scrollWheelMonitor {
+            NSEvent.removeMonitor(scrollWheelMonitor)
+        }
+        boundsObserver = nil
+        scrollEndObserver = nil
+        scrollWheelMonitor = nil
+        scrollView = nil
+        installationAttempts = 0
+    }
+
+    func installIfNeeded() {
+        guard scrollView == nil else {
+            return
+        }
+        guard let scrollView = nearestScrollView() ?? firstScrollViewInWindow() else {
+            retryInstallation()
+            return
+        }
+        installationAttempts = 0
+        self.scrollView = scrollView
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        boundsObserver = NotificationCenter.default.addObserver(
+            forName: NSView.boundsDidChangeNotification,
+            object: scrollView.contentView,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.scheduleSnap()
+            }
+        }
+        scrollEndObserver = NotificationCenter.default.addObserver(
+            forName: NSScrollView.didEndLiveScrollNotification,
+            object: scrollView,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.scheduleSnap(delay: 0)
+            }
+        }
+        scrollWheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) {
+            [weak self] event in
+            Task { @MainActor [weak self] in
+                self?.handleScrollWheel(event)
+            }
+            return event
+        }
+        // SwiftUI can restore a fractional List offset before this observer is
+        // installed. Snap it once so the panel never opens on a partial row.
+        DispatchQueue.main.async { [weak self] in
+            self?.scheduleSnap()
+        }
+    }
+
+    /// SwiftUI can attach this representable before it has materialized the
+    /// backing `NSScrollView`. Retry briefly instead of leaving snapping off.
+    private func retryInstallation() {
+        guard window != nil, installationAttempts < 10 else {
+            return
+        }
+        installationAttempts += 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.installIfNeeded()
+        }
+    }
+
+    private func handleScrollWheel(_ event: NSEvent) {
+        guard
+            event.window === window,
+            let scrollView
+        else {
+            return
+        }
+        let location = scrollView.convert(event.locationInWindow, from: nil)
+        guard scrollView.bounds.contains(location) else {
+            return
+        }
+        // Wheel and trackpad momentum do not consistently publish
+        // `didEndLiveScroll` for SwiftUI-backed lists. Debouncing the actual
+        // events makes the last one reliably trigger the snap.
+        scheduleSnap(delay: 0.1)
+    }
+
+    private func nearestScrollView() -> NSScrollView? {
+        var view: NSView? = self
+        while let currentView = view {
+            if let scrollView = currentView.enclosingScrollView {
+                return scrollView
+            }
+            view = currentView.superview
+        }
+        return nil
+    }
+
+    /// A SwiftUI `List` can place a background representable beside its
+    /// `NSScrollView`, not inside the document view. In that arrangement the
+    /// parent chain has no scroll view, so fall back to the panel's list.
+    private func firstScrollViewInWindow() -> NSScrollView? {
+        guard let contentView = window?.contentView else {
+            return nil
+        }
+        return firstScrollView(in: contentView)
+    }
+
+    private func firstScrollView(in view: NSView) -> NSScrollView? {
+        if let scrollView = view as? NSScrollView,
+           scrollView.hasVerticalScroller || scrollView.documentView != nil {
+            return scrollView
+        }
+        for subview in view.subviews {
+            if let scrollView = firstScrollView(in: subview) {
+                return scrollView
+            }
+        }
+        return nil
+    }
+
+    private func scheduleSnap(delay: TimeInterval = 0.06) {
+        guard !isSnapping else {
+            return
+        }
+        pendingSnap?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.snapToNearestRow()
+        }
+        pendingSnap = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    private func snapToNearestRow() {
+        guard
+            let scrollView,
+            let documentView = scrollView.documentView,
+            rowHeight > 0
+        else {
+            return
+        }
+        let clipView = scrollView.contentView
+        let maximumOrigin = max(documentView.bounds.height - clipView.bounds.height, 0)
+        let targetOrigin = RowScrollSnap.targetOrigin(
+            currentOrigin: clipView.bounds.origin.y,
+            maximumOrigin: maximumOrigin,
+            rowHeight: rowHeight
+        )
+        guard abs(targetOrigin - clipView.bounds.origin.y) > 0.5 else {
+            return
+        }
+
+        isSnapping = true
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.14
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            clipView.animator().setBoundsOrigin(
+                NSPoint(x: clipView.bounds.origin.x, y: targetOrigin)
+            )
+        } completionHandler: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else {
+                    return
+                }
+                if let scrollView = self.scrollView {
+                    scrollView.reflectScrolledClipView(scrollView.contentView)
+                }
+                self.isSnapping = false
+            }
+        }
+    }
+}

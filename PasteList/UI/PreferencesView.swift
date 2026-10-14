@@ -76,11 +76,8 @@ struct PreferencesView: View {
                     if pasteAutomationController.isAssistivePasteEnabled,
                        !pasteAutomationController.isPostEventAuthorized {
                         Button("Enable Assistive Paste…") {
-                            Task {
-                                await pasteAutomationController.requestAuthorization()
-                            }
+                            pasteAutomationController.openPostEventSettings()
                         }
-                        .disabled(pasteAutomationController.permissionRequestState == .requesting)
 
                         Text("Make sure \(AppConfiguration.name) is listed and turned on in Privacy & Security › Accessibility.")
                             .font(.caption)

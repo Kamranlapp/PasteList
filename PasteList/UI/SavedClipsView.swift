@@ -7,11 +7,12 @@ import SwiftUI
 struct SavedClipsView: View {
     @ObservedObject private var viewModel: HistoryViewModel
     @State private var hoveredClipID: Int64?
+    @State private var rowWidths: [Int64: CGFloat] = [:]
     @State private var mouseSwipeOffsets: [Int64: CGFloat] = [:]
     private let blobStorage: BlobStorage
     private let thumbnailCache: ImageThumbnailCache
     private let onActivateClip: (ClipRecord) -> Void
-    private let onImagePreviewChanged: (Int64?) -> Void
+    private let onPreviewChanged: (ClipPreviewTarget?) -> Void
     private static let imagePreviewHoverDelay = Duration.milliseconds(500)
 
     init(
@@ -19,18 +20,18 @@ struct SavedClipsView: View {
         blobStorage: BlobStorage,
         thumbnailCache: ImageThumbnailCache,
         onActivateClip: @escaping (ClipRecord) -> Void,
-        onImagePreviewChanged: @escaping (Int64?) -> Void = { _ in }
+        onPreviewChanged: @escaping (ClipPreviewTarget?) -> Void = { _ in }
     ) {
         self.viewModel = viewModel
         self.blobStorage = blobStorage
         self.thumbnailCache = thumbnailCache
         self.onActivateClip = onActivateClip
-        self.onImagePreviewChanged = onImagePreviewChanged
+        self.onPreviewChanged = onPreviewChanged
     }
 
     var body: some View {
         content
-            .padding(StatusItemController.cursorPanelPadding)
+            .padding(CursorPanelStyle.contentPadding)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background {
                 ZStack {
@@ -42,12 +43,14 @@ struct SavedClipsView: View {
                     Color.white.opacity(0.1)
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 25, style: .continuous))
+            .clipShape(
+                RoundedRectangle(cornerRadius: CursorPanelStyle.cornerRadius, style: .continuous)
+            )
             .task(id: hoveredClipID) {
-                await updateImagePreview()
+                await updatePreview()
             }
             .onDisappear {
-                onImagePreviewChanged(nil)
+                onPreviewChanged(nil)
             }
     }
 
@@ -91,9 +94,29 @@ struct SavedClipsView: View {
                 }
             }
         }
-        .listStyle(.plain)
+        .listStyle(.inset)
+        .compactVerticalListMargins()
+        .environment(\.defaultMinListRowHeight, ClipRowStyle.height)
         .scrollIndicators(.hidden)
         .scrollContentBackground(.hidden)
+        .background(RowSnappingScrollObserver(rowHeight: ClipRowStyle.scrollPitch))
+        .mask {
+            VStack(spacing: 0) {
+                LinearGradient(
+                    colors: [.clear, .black],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            .frame(height: 24)
+                Color.black
+                LinearGradient(
+                    colors: [.black, .clear],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 24)
+            }
+        }
     }
 
     @ViewBuilder
@@ -107,7 +130,8 @@ struct SavedClipsView: View {
                 ClipRowView(
                     clip: clip,
                     thumbnailCache: thumbnailCache,
-                    fileURLs: urls
+                    fileURLs: urls,
+                    onWidthChanged: { updateRowWidth($0, for: clip) }
                 )
 
                 FileDragSourceView(
@@ -120,7 +144,11 @@ struct SavedClipsView: View {
             }
         } else {
             ZStack {
-                ClipRowView(clip: clip, thumbnailCache: thumbnailCache)
+                ClipRowView(
+                    clip: clip,
+                    thumbnailCache: thumbnailCache,
+                    onWidthChanged: { updateRowWidth($0, for: clip) }
+                )
 
                 MouseSwipeActionView(
                     onActivate: { onActivateClip(clip) },
@@ -170,27 +198,43 @@ struct SavedClipsView: View {
     @ViewBuilder
     private func rowBackground(for clip: ClipRecord) -> some View {
         if let clipID = clip.id, hoveredClipID == clipID {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: CursorPanelStyle.cornerRadius, style: .continuous)
                 .fill(Color.primary.opacity(0.08))
         } else {
             Color.clear
         }
     }
 
-    private func updateImagePreview() async {
+    private func updatePreview() async {
         guard
             let clipID = hoveredClipID,
-            let clip = viewModel.pinned.first(where: { $0.id == clipID }),
-            ClipContentType(rawValue: clip.type) == .image
+            let clip = viewModel.pinned.first(where: { $0.id == clipID })
         else {
-            onImagePreviewChanged(nil)
+            onPreviewChanged(nil)
             return
         }
         try? await Task.sleep(for: Self.imagePreviewHoverDelay)
         guard !Task.isCancelled else {
             return
         }
-        onImagePreviewChanged(clipID)
+        if ClipContentType(rawValue: clip.type) == .image {
+            onPreviewChanged(.image(clipID))
+        } else if let rowWidth = rowWidths[clipID], ClipTextPreviewPolicy.shouldShow(
+            for: clip,
+            rowWidth: rowWidth,
+            hasQuickPasteKey: false
+        ) {
+            onPreviewChanged(.text(clipID))
+        } else {
+            onPreviewChanged(nil)
+        }
+    }
+
+    private func updateRowWidth(_ width: CGFloat, for clip: ClipRecord) {
+        guard let id = clip.id, rowWidths[id] != width else {
+            return
+        }
+        rowWidths[id] = width
     }
 
 }

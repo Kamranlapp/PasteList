@@ -1,6 +1,24 @@
 import AppKit
 import SwiftUI
 
+enum CursorPanelStyle {
+    static let cornerRadius: CGFloat = 15
+    static let contentPadding: CGFloat = 6
+}
+
+extension View {
+    /// Keeps the horizontal inset supplied by the list style while letting the
+    /// shared panel padding control the top and bottom perimeter.
+    @ViewBuilder
+    func compactVerticalListMargins() -> some View {
+        if #available(macOS 14.0, *) {
+            contentMargins(.vertical, 0, for: .scrollContent)
+        } else {
+            self
+        }
+    }
+}
+
 enum QuickPasteShortcut {
     static let maximumEntryCount = 10
 
@@ -50,7 +68,7 @@ struct ClipRowFramePreferenceKey: PreferenceKey {
 struct SelectionBackgroundShape: Shape {
     let roundsTopCorners: Bool
     let roundsBottomCorners: Bool
-    private let cornerRadius: CGFloat = 20
+    private let cornerRadius = CursorPanelStyle.cornerRadius
 
     func path(in rect: CGRect) -> Path {
         let maximumRadius = min(rect.width, rect.height) / 2

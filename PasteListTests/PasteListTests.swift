@@ -6,6 +6,25 @@ import XCTest
 @testable import PasteList
 
 final class PasteListTests: XCTestCase {
+    func testRowScrollSnapAlignsToNearestRowAndRespectsBounds() {
+        XCTAssertEqual(
+            RowScrollSnap.targetOrigin(
+                currentOrigin: 79,
+                maximumOrigin: 520,
+                rowHeight: ClipRowStyle.height
+            ),
+            72
+        )
+        XCTAssertEqual(
+            RowScrollSnap.targetOrigin(
+                currentOrigin: 509,
+                maximumOrigin: 511,
+                rowHeight: ClipRowStyle.height
+            ),
+            504
+        )
+    }
+
     #if DEBUG
     func testDebugResetButtonsAreVisibleByDefaultAndPersistTheirSetting() {
         let suiteName = "PasteListTests.debug-reset-buttons.\(UUID().uuidString)"
@@ -764,6 +783,14 @@ final class PasteListTests: XCTestCase {
         XCTAssertTrue(automationSource.contains("import ApplicationServices"))
         XCTAssertTrue(automationSource.contains("AXIsProcessTrusted()"))
         XCTAssertTrue(automationSource.contains("CGRequestPostEventAccess"))
+        XCTAssertTrue(
+            automationSource.contains(
+                "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility"
+            )
+        )
+        XCTAssertFalse(
+            automationSource.contains("x-apple.systempreferences:com.apple.Accessibility-Settings.extension")
+        )
     }
 
     @MainActor
@@ -971,7 +998,7 @@ final class PasteListTests: XCTestCase {
         XCTAssertEqual(displaySize.height, 60)
     }
 
-    func testSavedPanelIsHalfHeightAndSharesTopEdgeWithHistoryPanel() {
+    func testSavedPanelRoundsUpToWholeRowsAndSharesTopEdgeWithHistoryPanel() {
         let surfaceFrame = NSRect(x: 416, y: 300, width: 334, height: 416)
 
         let savedFrame = SavedClipsPlacement.frame(
@@ -984,7 +1011,18 @@ final class PasteListTests: XCTestCase {
             savedFrame.width,
             (surfaceFrame.width * SavedClipsPlacement.widthRatio).rounded()
         )
-        XCTAssertEqual(savedFrame.height, surfaceFrame.height / 2)
+        XCTAssertEqual(
+            savedFrame.height,
+            SavedClipsPlacement.alignedHeight(for: surfaceFrame.height / 2)
+        )
+        let rowAreaHeight = savedFrame.height
+            - CursorPanelStyle.contentPadding * 2
+            - SavedClipsPlacement.bottomMaskClearance
+        XCTAssertEqual(
+            rowAreaHeight.truncatingRemainder(dividingBy: ClipRowStyle.scrollPitch),
+            0,
+            accuracy: 0.001
+        )
         XCTAssertEqual(savedFrame.maxX, surfaceFrame.minX - 16)
         XCTAssertEqual(savedFrame.maxY, surfaceFrame.maxY)
     }

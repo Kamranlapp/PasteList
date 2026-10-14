@@ -148,11 +148,24 @@ final class PasteAutomationController: ObservableObject {
         },
         openSystemSettings: @escaping () -> Void = {
             guard let url = URL(
-                string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+                string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility"
             ) else {
                 return
             }
-            NSWorkspace.shared.open(url)
+            if let settingsApplicationURL = NSWorkspace.shared
+                .urlForApplication(withBundleIdentifier: "com.apple.systempreferences") {
+                NSWorkspace.shared.openApplication(
+                    at: settingsApplicationURL,
+                    configuration: NSWorkspace.OpenConfiguration()
+                )
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                NSWorkspace.shared.open(url)
+                NSRunningApplication
+                    .runningApplications(withBundleIdentifier: "com.apple.systempreferences")
+                    .first?
+                    .activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+            }
         },
         backgroundRefreshInterval: TimeInterval = 60,
         settingsRefreshInterval: TimeInterval = 1

@@ -1,6 +1,7 @@
 import AppKit
 import Darwin
 import ServiceManagement
+import Sparkle
 import SwiftUI
 
 @MainActor
@@ -30,6 +31,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var preferencesWindowController: PreferencesWindowController?
     private(set) var retentionScheduler: RetentionScheduler?
     private(set) var onboardingWindowController: OnboardingWindowController?
+    private let updaterController = SPUStandardUpdaterController(
+        startingUpdater: false,
+        updaterDelegate: nil,
+        userDriverDelegate: nil
+    )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Hosted unit tests create isolated databases explicitly.
@@ -51,6 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         NSApp.setActivationPolicy(.accessory)
+        updaterController.startUpdater()
 
         #if DEBUG
         let debugResetAction = DebugResetRelaunchAction(
@@ -119,6 +126,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 isOnboardingCompleted: isOnboardingCompleted,
                 onOpenSettings: { [weak preferencesWindowController] in
                     preferencesWindowController?.show()
+                },
+                onCheckForUpdates: { [weak self] in
+                    self?.updaterController.checkForUpdates(nil)
                 }
             )
             self.statusItemController = statusItemController

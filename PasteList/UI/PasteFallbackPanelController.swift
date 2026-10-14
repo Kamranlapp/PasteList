@@ -189,13 +189,8 @@ private struct PasteFallbackView: View {
                             Button("Done", action: dismiss)
                         } else {
                             Button("Open System Settings") {
-                                Task {
-                                    await pasteAutomationController.requestAuthorization()
-                                }
+                                pasteAutomationController.openPostEventSettings()
                             }
-                            .disabled(
-                                pasteAutomationController.permissionRequestState == .requesting
-                            )
                             Button("Close", action: dismiss)
                         }
                     }
